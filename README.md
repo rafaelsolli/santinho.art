@@ -1700,16 +1700,23 @@ Só resolve siglas que estão de fato na base gerada por `update-data.mjs`. Sigl
 sem cor conhecida **não derruba o build**: cai na paleta por hash, que agora é
 de cinzas — então a ausência de cor aparece como ausência, não como cor errada.
 
-Hoje ficam de fora `MISSÃO`, `PRD` e `UP`, e o motivo importa:
+O Wikidata resolveu 27 das 30 siglas. Ficaram de fora `MISSÃO` (que herdou o
+número 14 do PTB, cuja única entrada no Wikidata está marcada como extinta em
+2023 — pintar o MISSÃO de verde-escuro do PTB atribuiria identidade que o dado
+não sustenta), `PRD` (2023) e `UP`, que não têm `P465`.
 
-- **MISSÃO** é a legenda que herdou o número 14. A única entrada relacionada no
-  Wikidata é o PTB, `#005533`, marcado como **extinto em 2023**. Pintar o MISSÃO
-  de verde-escuro do PTB seria atribuir uma identidade que o dado não sustenta —
-  o mesmo erro do "PL laranja".
-- **PRD** (2023) e **UP** não têm `P465` no Wikidata.
+### O arquivo é curadoria, e o script a preserva
 
-Para preencher qualquer uma delas basta uma linha em `CORES_MANUAIS`, com o
-motivo — é o lugar previsto para conhecimento que a fonte não tem.
+As 30 cores hoje em `data/cores-partidos.json` foram **revisadas à mão**, e são
+mais precisas que as do Wikidata em vários casos. Por isso o script mudou de
+comportamento: **o que já está no arquivo tem precedência**, e o Wikidata só
+preenche lacunas. Rodar `npm run update-colors` de novo não apaga ajuste manual —
+ele lista o que preservou. Para descartar a curadoria e refazer tudo da fonte,
+`--refazer`, explicitamente.
+
+O arquivo carrega a procedência de cada sigla em `origem`
+(`curadoria` | `manual` | `wikidata` | `wikidata-amplo`), então dá para auditar
+depois de onde cada cor veio.
 
 Três detalhes que custaram tempo e estão codificados no script:
 
@@ -2019,7 +2026,325 @@ Ambas viram teste de regressão, porque não são óbvias em revisão de código
   `dialog` — sobra do `padding: 1em` e da borda padrão, que zeramos. Sem
   `max-width: 100%`, a folha ficava 38 px estreita e encostada num lado.
 
-## 59.11. Publicação no GitHub Pages
+## 59.11. Cabeçalho e rodapé
+
+```text
+santinho.art                    [🇧🇷│SP]  [⤴ Compartilhar]
+nada impresso: nem voto, nem santinho
+
+        …seis cards…
+
+    ┌──────────────────┐ ┌──────────────────┐   ← abas encostadas na base,
+    │ 📍 trocar estado │ │🔍 buscar por nome│     arredondadas só em cima
+```
+
+Tocar numa aba puxa a ficha para cima, e a aba sobe com ela (ver 59.12).
+
+O layout virou três faixas (`grid-template-rows: auto 1fr auto`): identidade em
+cima, cards no meio, **controles no rodapé** — zona do polegar, que é onde eles
+são usados. Compartilhar ficou no cabeçalho, com rótulo, porque é a ação de
+saída, não de edição.
+
+A **placa de estado** (bandeira + sigla em duas metades exatas) fica no
+cabeçalho, ao lado do compartilhar, e também puxa a ficha: se alguém tentar
+trocar de estado clicando ali, funciona. O botão do rodapé ficou só com o rótulo
+`trocar estado`. Não existe mais selo de ano — a placa ocupa aquele lugar.
+
+### O subtítulo passa por baixo dos controles
+
+O subtítulo é `grid-column: 1 / -1` de propósito: colocado na coluna 1, ele
+herdaria a largura sobrada pela coluna dos controles (~144px) e quebraria em duas
+linhas em qualquer tela.
+
+Sendo de largura cheia, ele corre por baixo da placa e do compartilhar — e por um
+tempo **encavalava** neles: uma margem negativa o trazia para dentro daquela
+faixa. A correção não foi mexer no subtítulo, e sim **encurtar os controles do
+cabeçalho** (`--btn-topo: calc(var(--btn) * .84)`), que passaram a terminar antes
+dele. As abas do rodapé continuam em `--btn` cheio, por serem o alvo de toque
+principal.
+
+Com isso o subtítulo tem 6-7px de respiro dos botões (medido; ele tinha ficado
+colado quando os controles encurtaram) e 12-13px do título — distância aceita
+como consequência de ele estar embaixo dos botões, não do lado deles.
+
+E como ele não disputa espaço com nada, **não precisa mais sumir por largura**:
+fica visível até 280px. Só a marca cede lugar, e apenas abaixo de 310px, onde a
+primeira faixa realmente não cabe. A escada por *altura* do §32 continua.
+
+### O ".art" recua
+
+`santinho` fica em tinta cheia; `.art` num cinza discreto (`--ink-soft`), porque
+é irrelevante para quem usa. Mantém 4,4:1 contra o fundo — acima do 3:1 exigido
+para texto grande, e a suíte mede essa razão.
+
+Dentro do cabeçalho, título e controles começam na **mesma linha**
+(`align-items: start`). Antes era `end`, e o título descia até a base dos
+controles, deixando uma faixa branca em cima dele. O subtítulo fica em faixa de
+largura cheia logo abaixo: tentei colocá-lo na coluna da marca, junto ao título,
+mas ali a coluna é estreita e a frase quebrava em duas linhas.
+
+Isso criou um segundo problema: os controles (30-38px) são mais altos que o texto
+do título (20-27px), então a primeira faixa **sobra abaixo do título** e o
+subtítulo era empurrado 12-15px para baixo, longe demais. A sobra é proporcional
+a `--btn` — as duas medidas escalam por `vw` —, então é recuperada com margem
+negativa:
+
+```css
+.tagline { margin-top: calc(3px - var(--btn) * 0.24); }
+```
+
+Coeficiente empírico, e é justamente por isso que a suíte **mede a distância
+resultante** em todas as larguras do §50 e exige entre 2 e 8px: hoje dá 3,9 a
+5,7px. O título também subiu de `clamp(19px, 5.6vw, 26px)` para
+`clamp(20.5px, 6.1vw, 27px)`, aproveitando a folga horizontal e reduzindo a
+sobra na origem.
+
+O ano saiu do subtítulo `ELEIÇÕES 2026` e virou **selo** ao lado do
+compartilhar, com a mesma altura e o mesmo raio dos botões, mas sem sombra: não é
+clicável e não deve se anunciar como controle.
+
+### A folha é uma ficha puxada pela aba
+
+Os dois controles do rodapé são **abas**: arredondadas só em cima, encostadas na
+borda de baixo, sombra projetada para cima. Tocar puxa a ficha, e **a aba sobe
+junto com ela**, terminando no topo da folha — é a aba que carrega o cartão, como
+numa ficha de arquivo.
+
+```text
+fechado                          aberto
+──────────────────────────       ──────────────────────────
+                                 ┌────────┐┌────────┐  ← abas no topo da ficha
+   …cards…                       │ SP     ││ buscar │
+                                 ├────────┴┴────────┤
+┌────────┐┌────────┐             │                  │
+│ SP     ││ buscar │  ← abas     │   conteúdo       │
+└────────┘└────────┘             └──────────────────┘
+```
+
+A continuidade é medida, não estimada: a animação parte de
+`translateY(calc(100% - var(--btn)))`, posição em que a fileira de abas fica
+**no pixel exato** dos botões do rodapé (809px numa tela de 844), e sobe 640px
+até o repouso. A suíte lê o primeiro e o último quadro com a animação pausada
+(`getAnimations()`, `currentTime`), então o teste é determinístico em vez de
+depender de amostragem.
+
+As abas dentro da folha são **clonadas dos botões originais**
+(`cloneNode(true)`, ids removidos): mesma estrutura, mesma geometria, mesmo
+`--btn`. A suíte confere `x` e `width` de cada aba contra o botão correspondente.
+
+Duas decisões dentro disso:
+
+- **A aba da folha aberta deixa de ser um botão.** Ela é a aba da ficha, não um
+  controle: viraria um botão cujo rótulo visível diz "trocar estado" mas cuja
+  ação é fechar, o que quebra o WCAG 2.5.3. É convertida em `<span>` inerte
+  (`aria-hidden`), e fechar continua no ✕, no `Esc` e no clique fora.
+- **A outra aba troca de folha sem descer e subir.** A ficha fica parada; só o
+  conteúdo e a aba fundida mudam. A folha fechada não guarda fileira órfã: ela é
+  removida no evento `close`.
+- **A aba mostra que continua para dentro.** Toda aba tem uma **sombra interna
+  na base** (`inset 0 -8px 10px -7px`) — com a folha fechada e com a folha aberta
+  na aba inativa. Só a aba ativa perde tudo e se funde ao corpo da ficha. A
+  primeira tentativa foi uma linha dura de 2px na base da aba inativa; ficou
+  ruim, a sombra interna resolve melhor e vale nos dois estados.
+
+### Animação de puxar e devolver
+
+Abrir anima `translateY(calc(100% - var(--btn))) → 0`. Fechar é o lado difícil:
+`<dialog>` sai da top layer no instante em que `close()` é chamado, sem dar tempo
+de animar. Então `fecharComAnimacao()` adiciona `.is-fechando`, espera o
+`animationend` (com `setTimeout` de segurança) e só então fecha. O `Esc` tem o
+`cancel` cancelado com `preventDefault()` para passar pelo mesmo caminho.
+
+Duas armadilhas que custaram medição:
+
+- **Especificidade.** Durante o fechamento o diálogo **ainda é `[open]`**, e a
+  regra de subida `[open]:not(.sem-animacao)` vencia a de descida — a folha
+  simplesmente não descia (a medição quadro a quadro dava `169, 169, 169…`).
+  Precisa do `:not(.is-fechando)` explícito.
+- **`requestAnimationFrame` é cedo demais.** A troca de aba desliga a animação
+  com `.sem-animacao`, e eu removia a classe no quadro seguinte — antes de a
+  animação começar, então ela rodava de novo e a folha descia e subia. A classe
+  agora sai no evento `close`.
+
+`prefers-reduced-motion: reduce` fecha na hora, sem animação — e a suíte verifica
+isso emulando a media feature.
+
+### Rótulo dentro do botão, não ao lado
+
+Os dois controles do rodapé seguem o mesmo padrão — **ícone + rótulo**:
+`📍 trocar estado` e `🔍 buscar por nome`. Os ícones são SVG inline
+(equivalentes ao `MapPin` e ao `MagnifyingGlass` do Phosphor), do mesmo tamanho e
+sempre antes do rótulo; a suíte confere a paridade. O rótulo fica **dentro** do `<button>` — texto ao lado não
+seria clicável e frustraria quem tocasse nele. No seletor de estado, as duas
+metades exatas (bandeira à esquerda, sigla centrada à direita) passaram para uma
+placa interna, então a geometria pedida sobrevive e o rótulo vem depois dela.
+
+Os três rótulos visíveis estão **contidos** nos nomes acessíveis
+(`Estado: São Paulo. Trocar estado`, `Buscar por nome do candidato`,
+`Compartilhar minha cola eleitoral`), como pede o WCAG 2.5.3 — senão comando de
+voz pelo texto visível não funciona. A suíte verifica essa continência.
+
+### O que a suíte trava aqui
+
+O cabeçalho e o rodapé ficaram apertados, então em **todas** as larguras do §50 a
+suíte confere: selo `2026` à esquerda do compartilhar e dentro do cabeçalho;
+selo, estado, busca e compartilhar com a mesma altura; estado e busca abaixo dos
+cards e dentro da tela; a marca cabendo sem encavalar no selo; e a marca
+continuando exatamente `santinho.art` — porque, quando o ano ainda morava dentro
+do `<h1>`, o `gap` do flex passou a separar cada nó de texto do `<span>` do
+ponto, e a marca virou `santinho . art`.
+
+### Aviso removido
+
+`registros ainda não julgados pelo TSE` saiu por decisão de produto. A ressalva
+continua no dado (`meta.situacaoPublicada`) e documentada em 59.4 — só não
+aparece mais na interface. Os outros avisos seguem de pé: `carregando dados…`,
+`dados de exemplo — base não oficial` e a falha de validação do §44.
+
+## 59.12. Busca de candidato por nome
+
+Um segundo diálogo, no mesmo estilo do seletor de estado, com campo de busca no
+topo. Achar o candidato pelo nome e deixar o app preencher o número resolve o
+problema real de quem não decorou 5 dígitos.
+
+### Onde fica
+
+Um botão de lupa no cabeçalho, ao lado do compartilhar. Um único ponto de
+entrada, e a busca cobre **todos os cargos de uma vez** — a UF corrente mais a
+base nacional. O resultado sabe a que cargo pertence, então escolher preenche o
+card certo sozinho; não é preciso saber em qual card tocar antes.
+
+Cada linha traz foto, nome, selo do partido na cor da legenda, cargo e número.
+
+### Neutralidade (§46) — e uma inversão de leitura
+
+A primeira versão abria com lista vazia e ordenava por semelhança de nome, por
+medo de "virar vitrine". A leitura mudou, e a nova é melhor: **lista alfabética
+completa é mais neutra que ranking**. Ranking por semelhança é uma ordem que o
+produto escolhe; A-Z é uma ordem que ninguém escolhe. Todos entram, ninguém é
+destacado, e o critério é objetivo — nome, com número do candidato como segundo
+critério.
+
+O que o §46 proíbe continua valendo: nada de popularidade, cargo, partido,
+ideologia ou sugestão de combinação. E candidatura não exibível pelo §13 fica
+fora da lista também.
+
+O diálogo abre, então, com a **base inteira da UF corrente mais a nacional** —
+2.583 candidatos em SP — e o campo filtra.
+
+### Scroll infinito
+
+Montar 2.583 linhas de uma vez é desperdício, então a lista pagina de **50 em
+50**, com uma sentinela de 1px no fim observada por `IntersectionObserver`
+(`root` na própria lista, `rootMargin` de 240px para carregar antes de o usuário
+bater no fim). A sentinela se remove quando acaba.
+
+A ordenação acontece **uma vez**, na construção do índice, então filtrar não
+reordena nada: montar a lista completa custa 2,7 ms.
+
+### A ficha de estado tem o mesmo campo
+
+O diálogo de estado ganhou campo de busca no topo, igual ao de candidato, e as
+duas fichas têm as bordas de cima arredondadas.
+
+O filtro de estado usa **prefixo de palavra**, não substring: com 27 itens,
+substring fazia `ri` trazer Distrito Federal (dist-**ri**-to) e Espírito Santo
+(e-**s**pí-**ri**-to). Cada termo digitado precisa iniciar alguma palavra do nome
+ou a sigla — `ri` → os três Rios, `rio grande` → RN e RS, `grande sul` → RS,
+`sp` → SP e não ES.
+
+O campo **não rouba o foco na abertura**: quem abre a ficha recebe o foco no
+estado atual, com a lista já rolada até ele. São 27 itens; abrir o teclado virtual
+por padrão custaria mais do que ajuda. Na busca de candidato é o contrário — lá
+são 2.583 nomes e digitar é o caminho normal, então o campo recebe o foco.
+
+### O texto de contagem saiu
+
+`2.583 candidatos em SP · A-Z` não dizia nada que a lista não mostrasse. As
+mensagens de estado continuam: `carregando dados…`,
+`nenhum candidato encontrado em SP` e, na ficha de estado,
+`nenhum estado encontrado`.
+
+### Como o "nome aproximado" funciona
+
+Sem biblioteca (§36), ~60 linhas em `app.js`. Normaliza acento e caixa, quebra a
+consulta em termos e exige que **todos** casem — mas cada um pode casar de
+quatro formas, com pontuação decrescente:
+
+```text
+100  o nome inteiro começa com o termo
+ 70  alguma palavra começa com o termo
+ 40  o termo está dentro de uma palavra
+ 20  distância de edição ≤ 1 (termo de 4-6 letras) ou ≤ 2 (7+)
+```
+
+Nome mais curto desempata. Duas decisões que só apareceram testando com dados
+reais:
+
+- **Distância de edição por palavra, não pelo nome inteiro.** A primeira versão
+  usava subsequência sobre o nome completo, e `haddad` casava com
+  `RICHARDSON DA PADARIA`; `lula` trazia 32 resultados. Comparar termo contra
+  palavra derrubou o ruído sem perder `russomano` → `RUSSOMANNO` e
+  `gonsalves` → `GONÇALVES`.
+- **Conectivos não são exigidos.** `jose da silva` tem de achar
+  `JOSE SILVA LIMA DO TRANSPORTE`, que não tem a palavra "da". Termos de 4 letras
+  ou menos também não aceitam erro de digitação — seria ruído.
+
+Custo medido em SP (2.583 candidatos, o maior estado): **0,03 a 1,3 ms por
+tecla**. Índice construído sob demanda e invalidado quando a UF ou o estado de
+carga das bases muda.
+
+Nota sobre o filtro com a ordem alfabética: o escore de semelhança decide **o
+que** casa, não a posição. Buscar `lula` lista os 7 casamentos em A-Z, então
+`DR CÉLIO, LULA DO BEM` aparece antes de `LULA`. É previsível e neutro; se
+preferir o casamento mais forte primeiro, basta reordenar `achados` por escore em
+`buscarCandidatos()`.
+
+### Duas vagas de senador (§21)
+
+A primeira versão preenchia a primeira vaga livre e, com as duas ocupadas,
+sempre atropelava a `s1` — então buscar um terceiro senador sobrescrevia
+justamente quem tinha acabado de ser escolhido. A regra agora tem quatro níveis,
+nesta ordem:
+
+1. **a vaga que já tem esse mesmo número** — escolher alguém que já está na cola
+   é idempotente, não ocupa a outra vaga nem duplica;
+2. **a vaga vazia**;
+3. **a vaga sem candidato válido** (número incompleto ou inexistente) — perder
+   isso não custa nada;
+4. entre duas válidas, **a mexida há mais tempo**.
+
+O "há mais tempo" usa um contador monotônico (`state.mexidoEm`), não relógio:
+determinístico e fácil de testar. Editar dígitos à mão também conta como mexer,
+então a vez passa para a outra vaga. Hidratar pela URL marca os cargos na ordem
+em que aparecem, de modo que a primeira substituição começa pela `s1`.
+
+### Um achado dos dados reais
+
+Oito nomes em SP aparecem em **mais de um cargo**, com `SQ_CANDIDATO` diferentes
+— `GUTO SCHIAVETTO` está como deputado federal 1444 e como senador 144. Como o
+TSE não publicou o julgamento dos registros (59.4), não há como saber qual vale;
+a busca mostra os dois, com o cargo em cada linha, porque esconder um seria o
+produto decidindo qual é o verdadeiro.
+
+### Detalhe de implementação
+
+O campo é `type="text"`, não `type="search"`: com `search`, o navegador faz o
+`Escape` limpar o campo em vez de fechar o diálogo, e o botão nativo de limpar já
+estava oculto no CSS. O `Escape` também é tratado explicitamente, para o
+comportamento ser o mesmo em qualquer navegador.
+
+A folha puxa de baixo, igual à do estado. O campo fica no topo dela, então
+continua visível com o teclado virtual aberto. Clique fora do conteúdo fecha —
+no backdrop de um `<dialog>`, o alvo do clique é o próprio elemento, e isso
+estava implementado só no diálogo de estado.
+
+**As duas folhas têm altura fixa de 80% da tela** (`height: 80dvh`), mesmo sem
+conteúdo suficiente para preencher: folha que muda de tamanho conforme o
+resultado dá a sensação de instabilidade. No desktop vale o teto absoluto de
+620px, senão 80dvh viraria um cartão gigante.
+
+## 59.13. Publicação no GitHub Pages
 
 Nada de build: *Settings → Pages → Deploy from a branch → `main` / root*.
 Existe `.nojekyll` para o Jekyll não interferir. Todos os caminhos são
@@ -2027,9 +2352,9 @@ Existe `.nojekyll` para o Jekyll não interferir. Todos os caminhos são
 `usuario.github.io/santinho.art/` e no domínio próprio. Para o domínio, adicione
 um arquivo `CNAME` com `santinho.art` e aponte o DNS.
 
-## 59.12. Verificação
+## 59.14. Verificação
 
-`tests/interacao.mjs` — **286 asserções passando**, cobrindo os §48/§50 e mais.
+`tests/interacao.mjs` — **593 asserções passando**, cobrindo os §48/§50 e mais.
 A suíte sobe o servidor estático, acha o Chrome e dirige um navegador de verdade.
 Ela serve `tests/fixtures/data` (base fictícia fixa), **não** `data/`: atualizar
 a base real do TSE não pode quebrar teste.
@@ -2063,6 +2388,37 @@ O que ela verifica:
   contraste WCAG medida (≥ 4,5:1) para selo e número, em cor escura e clara;
 - dígitos: casinha visível em repouso, dígitos separados (não é bloco único), e
   largura/posição/gap idênticos antes e depois de focar;
+- geometria das duas folhas: largura cheia, encostadas na base, altura de
+  exatamente 80% da tela, e clique fora fechando ambas;
+- a ficha puxada pela aba: a aba partindo do pixel exato do botão do rodapé,
+  subindo 640px, ficando no topo da folha e colada no corpo, e descendo até o
+  mesmo pixel ao fechar (lido com a animação pausada); troca de aba sem mover a
+  ficha e sem nenhuma animação; aba ativa inerte; sem fileira órfã; e
+  `prefers-reduced-motion` fechando sem esperar animação;
+- filtro de estado: prefixo de palavra (não substring), sem acento, por sigla,
+  com vários termos, seta descendo do campo para a lista, Enter escolhendo o
+  primeiro, aviso de "nenhum estado" e o campo não roubando o foco na abertura;
+- bordas de cima arredondadas nas duas fichas e ausência do texto de contagem;
+- lista de candidatos: abre completa, em ordem alfabética, com 50 linhas no DOM;
+  rolar acrescenta 50 por vez até carregar todos e remover a sentinela; o filtro
+  preserva a ordem;
+- rótulos dos botões e continência no nome acessível (WCAG 2.5.3);
+- cabeçalho: título na mesma linha dos controles; subtítulo em uma linha, com
+  respiro de 4 a 12px dos botões e **sem sobrepor** placa ou compartilhar;
+  controles do topo mais baixos que as abas do rodapé; e o `.art` mais claro que
+  o resto da marca, ainda acima de 3:1 de contraste;
+- placa de estado: no cabeçalho antes do compartilhar, nomeando o estado no
+  rótulo acessível com a sigla visível contida nele (WCAG 2.5.3), e puxando a
+  mesma ficha que o botão do rodapé;
+- abas: a ativa sem sombra alguma, a inativa e as fechadas com sombra interna na
+  base;
+- busca por nome: lista vazia sem consulta e com uma letra só, acerto por nome,
+  sobrenome do meio, erro de digitação e conectivo ignorado, candidatura inapta
+  fora dos resultados, cobertura da base nacional, escolha preenchendo o card e a
+  URL, teclado (setas, Enter, Esc) e índice acompanhando a troca de UF;
+- escolha da vaga de senador: vaga vazia, vaga inválida, alternância entre as
+  duas válidas pela mexida mais antiga, idempotência ao reescolher quem já está
+  na cola, e edição manual passando a vez para a outra vaga;
 - seletor de estado: diálogo fechado ao abrir a página e sem as 27 bandeiras
   carregadas, abertura marcando o estado atual e levando o foco a ele, bandeira
   e nome corretos por opção, setas/`Home`/letra/`Esc`, foco voltando ao gatilho,
@@ -2080,6 +2436,24 @@ Falta o que só o dispositivo real prova (§49): Chrome e Brave no Android com
 Gboard — em especial backspace em campo vazio e ausência de zoom ao focar — e
 Safari no iPhone.
 
+### Dois furos na própria suíte
+
+Ambos apareceram só porque eu olhei os screenshots, não porque um teste falhou:
+
+1. **Asserção que lia `undefined`.** Ao reescrever o bloco de medição do
+   cabeçalho, minha substituição engoliu a propriedade `semTruncar`. A asserção
+   passou a receber `undefined`, virou `false` e falhou em todas as larguras — o
+   susto foi útil, mas se tivesse engolido uma propriedade cujo valor esperado
+   fosse falso, teria passado silenciosamente.
+2. **Asserção que passava vazia.**
+
+   A asserção "subtítulo em uma linha" passava sem medir nada: as fixtures têm
+   `fonte: MOCK`, o que faz o cabeçalho exibir `dados de exemplo — base não
+   oficial`, e a regra `body.has-status .tagline { display: none }` esconde o
+   subtítulo. A verificação caía no ramo `!subVisivel` e dava verde mesmo com a
+   frase quebrando em duas linhas no site real. Agora a suíte remove
+   `has-status` antes de medir.
+
 ### Verificado com a base real
 
 Além da suíte, conferido à mão contra os dados do TSE: nomes e siglas reais nos
@@ -2090,7 +2464,7 @@ quatro nomes mais longos da base (30 caracteres) renderizando inteiros em
 320×640 e 390×844, e as fotos oficiais carregando nos seis cards sem nenhuma
 requisição falhando.
 
-## 59.13. Pendências conscientes
+## 59.15. Pendências conscientes
 
 - **`og:image`**: `og.png` (1200×630) está no repositório; a fonte é
   `scripts/og.html`, que se captura em 1200×630 com qualquer headless para
@@ -2102,5 +2476,7 @@ requisição falhando.
   registrados. Decisão consciente de deixar como está — são 0,6% da base e a
   tendência é resolver quando o TSE julgar os registros. Ver 59.4.
 - **Peso do repositório**: ~113 MB de fotos. Ver 59.7.
+- **Cores de partido** são curadoria manual sobre a base do Wikidata; ao trocar
+  de eleição vale reconferir sigla por sigla. Ver 59.6.
 - **Situação da candidatura**: quando o TSE publicar o julgamento, remover `N` de
   `SITUACOES_EXIBIVEIS` em `app.js`. Ver 59.4.

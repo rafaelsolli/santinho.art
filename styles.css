@@ -18,8 +18,12 @@
 
   --photo-h:    78cqh;
   --photo-w:    calc(var(--photo-h) * 3 / 4);   /* proporção 3:4 obrigatória (§17) */
-  --btn:        clamp(32px, 9.4vw, 38px);   /* altura comum dos controles do header */
-  --flag-w:     calc(var(--btn) * 10 / 7);  /* bandeira em 10:7 na altura do botão */
+  --btn:        clamp(30px, 9vw, 38px);     /* altura das abas do rodapé */
+  /* Controles do cabeçalho um pouco mais baixos: assim o subtítulo, que é de
+     largura cheia, passa por baixo deles sem encavalar, e a distância até o
+     título fica curta sem precisar de margem negativa. */
+  --btn-topo:   calc(var(--btn) * .84);
+  --flag-w:     calc(var(--btn-topo) * 10 / 7);  /* bandeira em 10:7 na altura da placa */
   --gap:        clamp(5px, 1.1vh, 10px);
   --pad-x:      clamp(9px, 3.2vw, 18px);
   --radius:     clamp(7px, 1.4vh, 12px);
@@ -33,9 +37,9 @@ body {
   height: 100dvh;
   overflow: hidden;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   padding: max(6px, env(safe-area-inset-top)) var(--pad-x)
-           max(8px, env(safe-area-inset-bottom));
+           env(safe-area-inset-bottom, 0px);
   gap: var(--gap);
 
   font-family: "Helvetica Neue", Helvetica, Arial, system-ui, -apple-system, sans-serif;
@@ -58,44 +62,65 @@ body {
 .header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
+  /* start, não end: com end o título descia até a base dos controles e sobrava
+     faixa branca em cima dele. Assim título e controles começam na mesma linha,
+     e o subtítulo segue em faixa de largura cheia, sem quebrar em duas. */
+  align-items: start;
   column-gap: 10px;
-  padding-top: clamp(2px, 1vh, 10px);
+  padding-top: clamp(1px, .6vh, 6px);
 }
 
 .brand { min-width: 0; }
 
 .brand-name {
   margin: 0;
-  font-size: clamp(19px, 5.6vw, 26px);
+  font-size: clamp(18px, 5.7vw, 27px);
+  white-space: nowrap;
   font-weight: 800;
   letter-spacing: -.03em;
   line-height: 1;
 }
-.brand-dot { color: var(--ink-soft); }
+/* o ".art" é irrelevante para quem usa: fica num cinza discreto. --ink-soft
+   mantém 4,4:1 contra o fundo, acima do 3:1 exigido para texto grande. */
+.brand-sufixo { color: var(--ink-soft); }
 
-.brand-sub {
-  margin: 3px 0 0;
-  font-size: clamp(9px, 2.6vw, 11px);
-  font-weight: 700;
-  letter-spacing: .16em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
+.controls { display: flex; align-items: center; gap: clamp(6px, 2vw, 8px); }
+
+/* Placa de estado no cabeçalho: bandeira + sigla em duas metades exatas,
+   clicável, e também puxa a ficha. */
+.uf-placa-botao {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  height: var(--btn-topo);
+  padding: 0;
+  overflow: hidden;
+  font: inherit;
+  color: var(--ink);
+  background: var(--card);
+  border: 0;
+  border-radius: calc(var(--radius) * .62);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .14), 0 5px 12px -9px rgba(0, 0, 0, .55);
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.uf-placa-botao:active { transform: scale(.96); }
+.uf-placa-botao:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (hover: hover) {
+  .uf-placa-botao:hover {
+    box-shadow: 0 1px 0 rgba(0, 0, 0, .18), 0 7px 16px -9px rgba(0, 0, 0, .6);
+  }
 }
 
-.controls { display: flex; align-items: center; gap: 8px; }
-
-/* Gatilho de UF: no cabeçalho fica só bandeira + sigla.
+/* Gatilho de UF no rodapé: só o rótulo, já que a bandeira subiu.
    Usa o mesmo material dos cards — preenchimento creme, raio pequeno e sombra
    suave — em vez de contorno grosso: precisa parecer clicável sem brigar com os
    números, que são o elemento mais alto da tela (§56). */
 .uf-trigger {
-  /* duas metades exatas: bandeira à esquerda, sigla centrada à direita */
-  display: grid;
-  grid-template-columns: var(--flag-w) var(--flag-w);
-  align-items: stretch;
+  display: flex;
+  align-items: center;
   height: var(--btn);            /* mesma altura do botão de compartilhar */
-  padding: 0;
+  padding: 0 0 0 clamp(9px, 2.8vw, 12px);
   overflow: hidden;
   font: inherit;
   color: var(--ink);
@@ -112,6 +137,15 @@ body {
   .uf-trigger:hover {
     box-shadow: 0 1px 0 rgba(0, 0, 0, .18), 0 7px 16px -9px rgba(0, 0, 0, .6);
   }
+}
+
+/* a placa mantém as duas metades exatas: bandeira à esquerda, sigla centrada
+   à direita; o rótulo vem depois, dentro do mesmo botão */
+.uf-placa {
+  display: grid;
+  grid-template-columns: var(--flag-w) var(--flag-w);
+  align-items: stretch;
+  flex: none;
 }
 
 /* bandeira encostada na borda, como a foto encosta na faixa do card */
@@ -132,6 +166,58 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* ----------------------------------------------------- puxar e devolver ------
+   A folha sobe do rodapé e volta para lá ao fechar. O fechamento precisa de
+   ajuda do JS: <dialog> sai da top layer na hora, sem dar tempo de animar (ver
+   fecharComAnimacao em app.js). */
+@media (prefers-reduced-motion: no-preference) {
+  /* o :not(.is-fechando) é essencial: durante o fechamento o diálogo ainda é
+     [open], e sem isso a regra de subida vence por especificidade */
+  .uf-dialog[open]:not(.sem-animacao):not(.is-fechando) {
+    animation: folha-sobe .26s cubic-bezier(.22, .9, .24, 1);
+  }
+  .uf-dialog[open]:not(.sem-animacao):not(.is-fechando)::backdrop {
+    animation: fundo-entra .26s ease-out;
+  }
+  .uf-dialog[open].is-fechando {
+    animation: folha-desce .17s ease-in forwards;
+  }
+  .uf-dialog[open].is-fechando::backdrop {
+    animation: fundo-sai .17s ease-in forwards;
+  }
+}
+
+/* 100% - --btn: nessa posição a fileira de abas fica exatamente onde estão os
+   botões do rodapé, então a aba parece sair de lá */
+@keyframes folha-sobe  { from { transform: translateY(calc(100% - var(--btn))); } }
+@keyframes folha-desce { to   { transform: translateY(calc(100% - var(--btn))); } }
+@keyframes fundo-entra { from { opacity: 0; } }
+@keyframes fundo-sai   { to   { opacity: 0; } }
+
+/* ------------------------------------------------------------ folha e abas */
+/* A folha é uma ficha: as abas ficam no TOPO dela, então sobem junto com a folha
+   — o botão do rodapé parece virar a aba da ficha. O corpo é a superfície que
+   encosta por baixo das abas, com a borda de cima reta. */
+.folha-corpo {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--card);
+  border-radius: 18px 18px 0 0;
+}
+
+.folha-abas {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: clamp(7px, 2.4vw, 10px);
+  padding: 0 var(--pad-x);
+  background: transparent;
+}
+
 /* ------------------------------------------------- diálogo de escolha de UF */
 .uf-dialog {
   margin: 0 auto;
@@ -140,15 +226,17 @@ body {
   /* o navegador aplica max-width: calc(100% - 38px) a dialog, sobra do padding
      e da borda padrão que zeramos acima — sem isto a folha fica estreita */
   max-width: 100%;
-  max-height: min(78dvh, 620px);
+  /* altura fixa: a folha tem sempre 80% da tela, mesmo com pouco conteúdo */
+  height: 80dvh;
+  max-height: 80dvh;
   position: fixed;
   inset: auto 0 0 0;                 /* folha inferior no celular */
   border: 0;
-  border-radius: 18px 18px 0 0;
-  background: var(--card);
+  border-radius: 0;
+  background: transparent;      /* quem tem fundo é .folha-corpo */
   color: var(--ink);
-  box-shadow: 0 -12px 40px -14px rgba(0, 0, 0, .55);
-  overflow: hidden;
+  filter: drop-shadow(0 -12px 26px rgba(0, 0, 0, .35));
+  overflow: visible;
   display: flex;
   flex-direction: column;
 }
@@ -161,8 +249,6 @@ body {
   background: rgba(27, 23, 18, .55);
   backdrop-filter: blur(2px);
 }
-.uf-dialog[open] { animation: subir .18s ease-out; }
-@keyframes subir { from { transform: translateY(14px); opacity: .6; } }
 
 .uf-dialog-head {
   display: flex;
@@ -258,43 +344,297 @@ body {
   background: var(--ink);
 }
 
+/* ------------------------------------------------------- busca por nome */
+/* Folha inferior, igual à do estado. O campo fica no topo da folha, então
+   permanece visível mesmo com o teclado virtual aberto. */
+.busca-head { padding: 12px 12px 10px 14px; gap: 8px; }
+
+.busca-campo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 11px;
+  height: 40px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--neutral) 16%, transparent);
+}
+.busca-campo:focus-within {
+  background: var(--card);
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+.busca-lupa { width: 16px; height: 16px; flex: none; color: var(--ink-soft); }
+
+.busca-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 16px;            /* evita zoom automático no iOS ao focar */
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  -webkit-appearance: none;
+}
+.busca-input::placeholder { color: var(--ink-soft); font-weight: 500; }
+
+.busca-contagem {
+  margin: 0;
+  padding: 9px 16px 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.busca-contagem:empty { display: none; }
+
+.busca-fim { height: 1px; }
+
+.busca-lista {
+  margin: 0;
+  padding: 4px 0 max(10px, env(safe-area-inset-bottom));
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+}
+
+.busca-opcao {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 8px 16px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.busca-foto {
+  width: 34px;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  object-position: 50% 22%;
+  flex: none;
+  border-radius: 3px;
+  background: linear-gradient(160deg, #fff, var(--paper-2));
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .16);
+}
+.busca-ident { min-width: 0; display: grid; gap: 3px; }
+.busca-nome {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.busca-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.busca-partido {
+  flex: none;
+  font-weight: 800;
+  letter-spacing: .05em;
+  padding: 2px 5px;
+  border-radius: 3px;
+  color: var(--c-txt, var(--card));
+  background: var(--c, var(--neutral));
+}
+.busca-cargo {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  font-weight: 700;
+}
+.busca-numero {
+  flex: none;
+  font-size: 17px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+  color: var(--c-escura, var(--ink));
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--c, var(--neutral)) 10%, transparent);
+}
+.busca-opcao:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+@media (hover: hover) {
+  .busca-opcao:hover { background: color-mix(in srgb, var(--neutral) 12%, transparent); }
+}
+
 /* no desktop o diálogo vira um cartão centrado */
 @media (min-width: 700px) {
   .uf-dialog {
     inset: 0;
     margin: auto;
+    /* no desktop, 80dvh viraria um cartão gigante: mantém o teto absoluto */
+    height: min(80dvh, 620px);
     max-height: min(80dvh, 620px);
     border-radius: 14px;
     box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .6);
   }
-  .uf-dialog[open] { animation: aparecer .16s ease-out; }
-  @keyframes aparecer { from { transform: scale(.97); opacity: .5; } }
 }
 
-.share {
+.icone, .share {
   display: grid; place-items: center;
-  width: var(--btn); height: var(--btn);
+  height: var(--btn-topo);
   color: var(--card);
   background: var(--ink);
-  border: 0; border-radius: calc(var(--radius) * .7);
+  border: 0; border-radius: calc(var(--radius) * .62);
   cursor: pointer;
   transition: transform .12s ease, background .12s ease;
 }
-.share svg { width: 55%; height: 55%; }
-.share:active { transform: scale(.93); }
-.share:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* o de ícone puro continua quadrado */
+.icone { width: var(--btn); }
+
+/* rótulo dentro dos botões, para a ação ficar explícita */
+.rotulo-botao {
+  align-self: center;
+  padding: 0 clamp(8px, 2.6vw, 12px);
+  font-size: clamp(9.5px, 2.8vw, 11.5px);
+  font-weight: 800;
+  letter-spacing: .04em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* o de busca no rodapé usa o mesmo material do seletor de estado */
+.busca-botao {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  height: var(--btn);
+  padding: 0 0 0 clamp(9px, 2.8vw, 12px);
+  color: var(--ink);
+  background: var(--card);
+  border: 0;
+  border-radius: calc(var(--radius) * .62);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .14), 0 5px 12px -9px rgba(0, 0, 0, .55);
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.uf-trigger svg,
+.busca-botao svg { width: clamp(13px, 3.8vw, 16px); height: auto; flex: none; }
+.uf-trigger .rotulo-botao,
+.busca-botao .rotulo-botao { padding-left: clamp(6px, 1.8vw, 8px); }
+.busca-botao:active { transform: scale(.96); }
+.busca-botao:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (hover: hover) {
+  .busca-botao:hover {
+    box-shadow: 0 1px 0 rgba(0, 0, 0, .18), 0 7px 16px -9px rgba(0, 0, 0, .6);
+  }
+}
+
+/* compartilhar ganhou rótulo: sobrou espaço no cabeçalho */
+.share {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 clamp(10px, 3vw, 14px);
+}
+.share svg { width: clamp(14px, 4vw, 17px); height: auto; flex: none; }
+.share-rotulo {
+  font-size: clamp(10.5px, 3vw, 13px);
+  font-weight: 800;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.icone svg { width: 55%; height: 55%; }
+.icone { display: grid; place-items: center; }
+.icone:active { transform: scale(.93); }
+.icone:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* o de busca é secundário: contorno em vez de preenchimento cheio */
+#busca-trigger {
+  color: var(--ink);
+  background: var(--card);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .14), 0 5px 12px -9px rgba(0, 0, 0, .55);
+}
 
 .tagline, .status {
-  grid-column: 1 / -1;
-  margin: 4px 0 0;
+  grid-column: 1 / -1;      /* largura cheia: na coluna 1 a frase quebraria */
+  /* Sem margem negativa: ela trazia o subtítulo para dentro da faixa dos
+     controles e ele encavalava na placa de estado. Quem encurta a distância são
+     os controles mais baixos (--btn-topo); a suíte mede a folga resultante e
+     verifica que não há sobreposição. */
+  margin: 6px 0 0;
   font-size: clamp(10px, 2.9vw, 12px);
   color: var(--ink-soft);
   line-height: 1.25;
+  text-align: center;       /* subtítulo e avisos centrados na faixa */
 }
 .status { font-weight: 700; }
 body.has-status .tagline { display: none; }
 .status:empty { display: none; }
 .status[data-kind="warn"] { color: var(--ink); }
+
+/* O subtítulo é de largura cheia e passa por baixo dos controles, então não
+   disputa espaço com nada e não precisa sumir por largura — só por altura, na
+   escada do §32. A marca cede lugar se a primeira faixa não couber. */
+@media (max-width: 309px) {
+  .brand-name { display: none; }
+}
+
+/* --------------------------------------------------------------- rodapé */
+/* Estado e busca ficam aqui, na zona do polegar. */
+.rodape {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: clamp(7px, 2.4vw, 10px);
+  padding-top: clamp(3px, .8vh, 7px);
+}
+
+/* Abas: arredondadas só em cima, encostadas na borda de baixo, com sombra para
+   cima e uma sombra interna na base — a interna é o que dá a sensação de que a
+   aba continua para dentro, atrás do que está na frente dela. Vale com a folha
+   fechada e com a folha aberta na aba inativa; sai só na aba ativa, que se funde
+   ao corpo da ficha. */
+.aba {
+  --sombra-interna: inset 0 -8px 10px -7px rgba(0, 0, 0, .3);
+  border-radius: calc(var(--radius) * .62) calc(var(--radius) * .62) 0 0 !important;
+  box-shadow:
+    var(--sombra-interna),
+    0 -1px 0 rgba(0, 0, 0, .1),
+    0 -6px 14px -10px rgba(0, 0, 0, .55) !important;
+}
+@media (hover: hover) {
+  .aba:hover {
+    box-shadow:
+      var(--sombra-interna),
+      0 -1px 0 rgba(0, 0, 0, .14),
+      0 -9px 18px -10px rgba(0, 0, 0, .6) !important;
+  }
+}
+/* a aba da folha aberta se funde ao corpo dela */
+.folha-abas .aba.is-ativa {
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* a aba de trás mantém a sombra interna da base — é o que a coloca atrás do
+   corpo da ficha — e perde a sombra externa, que só faria sentido se ela
+   estivesse na frente */
+.folha-abas .aba:not(.is-ativa) {
+  box-shadow: var(--sombra-interna), 0 -1px 0 rgba(0, 0, 0, .06) !important;
+}
 
 /* ---------------------------------------------------------------- cards */
 .cards {
@@ -551,19 +891,17 @@ body.has-status .tagline { display: none; }
   .tagline { display: none; }
 }
 @media (max-height: 680px) {
-  .brand-sub { letter-spacing: .1em; }
   .header { padding-top: 0; }
   .digits { font-size: min(40cqh, calc(30cqw / var(--n, 4))); }
 }
 @media (max-height: 620px) {
   .brand-name { font-size: clamp(16px, 4.6vw, 20px); }
-  .brand-sub { display: none; }
   .digits { font-size: min(37cqh, calc(29cqw / var(--n, 4))); }
 }
 
 /* teclado virtual aberto: aperta o header e os gaps, mantém os 6 cards */
 body.kb-open { --gap: 4px; }
-body.kb-open .tagline, body.kb-open .brand-sub { display: none; }
+body.kb-open .tagline { display: none; }
 
 /* ------------------------------------------------ adaptação para desktop */
 @media (min-width: 700px) {

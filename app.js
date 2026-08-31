@@ -82,21 +82,39 @@ const state = {
   uf: UF_PADRAO,
   votes: {},     // key -> Array(len) com dígito (string) ou null
   focus: null,   // { key, index } ou null
+  /* ordem em que cada cargo foi mexido — contador monotônico, não relógio:
+   * determinístico e suficiente para saber qual vaga é a mais antiga (§21) */
+  mexidoEm: {},
 };
+let relogioDeEdicao = 0;
+const marcarMexido = key => { state.mexidoEm[key] = ++relogioDeEdicao; };
 
 const bases = new Map();     // 'SP' | 'BR' -> { status, cargos, partidos }
 const carregando = new Map();
 let meta = null;
 let coresDePartido = {};     // sigla -> 'rrggbb'
 
+/* páginas de 50 no scroll infinito: com a lista completa aberta, montar 2.570
+ * linhas de uma vez é desperdício */
+const PAGINA_BUSCA = 50;
+
 const els = {
   cards:     document.getElementById('cards'),
+  buscaTrigger: document.getElementById('busca-trigger'),
+  buscaDialog:  document.getElementById('busca-dialog'),
+  buscaInput:   document.getElementById('busca-input'),
+  buscaLista:   document.getElementById('busca-lista'),
+  buscaClose:   document.getElementById('busca-close'),
+  buscaContagem: document.getElementById('busca-contagem'),
   ufTrigger: document.getElementById('uf-trigger'),
+  ufPlaca:   document.getElementById('uf-placa-trigger'),
   ufFlag:    document.getElementById('uf-flag'),
   ufSigla:   document.getElementById('uf-sigla'),
   ufDialog:  document.getElementById('uf-dialog'),
   ufList:    document.getElementById('uf-list'),
   ufClose:   document.getElementById('uf-close'),
+  ufBusca:    document.getElementById('uf-busca'),
+  ufContagem: document.getElementById('uf-contagem'),
   share:     document.getElementById('share'),
   status:    document.getElementById('status'),
   toast:     document.getElementById('toast'),
@@ -332,7 +350,10 @@ function renderGatilhoUf() {
   els.ufFlag.src = bandeiraDaUf(state.uf);
   els.ufFlag.alt = '';                         // o nome vem no aria-label do botão
   els.ufSigla.textContent = state.uf;
-  els.ufTrigger.setAttribute('aria-label', 'Estado: ' + nome + '. Trocar de estado');
+  /* o rótulo visível da placa é a sigla, então ela entra no nome acessível
+   * (WCAG 2.5.3); o botão do rodapé mostra "trocar estado" */
+  els.ufPlaca.setAttribute('aria-label', 'Estado: ' + state.uf + ' — ' + nome + '. Trocar estado');
+  els.ufTrigger.setAttribute('aria-label', 'Trocar estado, hoje ' + nome);
 }
 
 /* A lista só é construída na primeira abertura: são 27 bandeiras (163 KB) que
@@ -372,19 +393,120 @@ function montarListaUf() {
   listaUfMontada = true;
 }
 
+/* só as opções visíveis: o filtro esconde as demais */
 function opcoesUf() {
-  return [...els.ufList.querySelectorAll('.uf-opcao')];
+  return [...els.ufList.querySelectorAll('.uf-opcao')]
+    .filter(b => !b.parentElement.hidden);
+}
+
+/* Prefixo de palavra, não substring: com 27 itens, "ri" tem de trazer os três
+ * Rios, não Distrito Federal (dist-RI-to) e Espírito Santo. Cada termo digitado
+ * precisa iniciar alguma palavra do nome ou a sigla. */
+function filtrarEstados() {
+  const termos = normalizarNome(els.ufBusca.value).split(' ').filter(Boolean);
+  let visiveis = 0;
+  for (const botao of els.ufList.querySelectorAll('.uf-opcao')) {
+    const uf = botao.dataset.uf;
+    const palavras = normalizarNome((NOME_DA_UF.get(uf) || '') + ' ' + uf).split(' ');
+    const combina = termos.every(t => palavras.some(p => p.startsWith(t)));
+    botao.parentElement.hidden = !combina;
+    if (combina) visiveis++;
+  }
+  els.ufContagem.textContent = visiveis ? '' : 'nenhum estado encontrado';
+}
+
+/* ------------------------------------------------------------ abas da folha
+ * A folha aberta mantém, na sua ponta, as mesmas abas do rodapé — clonadas dos
+ * botões originais, para a geometria ser idêntica e a folha parecer ter sido
+ * puxada por ali. A aba da folha aberta deixa de ser botão: é a ponta da ficha,
+ * não um controle (fechar já existe no ✕, no Esc e no clique fora). A outra aba
+ * troca de folha. */
+
+function montarAbas(ativa) {
+  const linha = document.createElement('div');
+  linha.className = 'folha-abas';
+
+  for (const [nome, original] of [['uf', els.ufTrigger], ['busca', els.buscaTrigger]]) {
+    const clone = original.cloneNode(true);
+    clone.removeAttribute('id');
+    for (const filho of clone.querySelectorAll('[id]')) filho.removeAttribute('id');
+
+    let aba = clone;
+    if (nome === ativa) {
+      /* vira elemento inerte, preservando as classes e o conteúdo */
+      aba = document.createElement('span');
+      aba.className = clone.className;
+      aba.append(...clone.childNodes);
+      aba.setAttribute('aria-hidden', 'true');
+      aba.classList.add('is-ativa');
+    } else {
+      aba.addEventListener('click', () => trocarDeFolha(nome));
+    }
+    aba.dataset.aba = nome;
+    linha.appendChild(aba);
+  }
+  return linha;
+}
+
+/* A fileira vai no TOPO da folha: assim o botão sobe junto com ela e termina
+ * como a aba da ficha, em vez de ficar parado no rodapé. */
+function prepararAbas(dialogo, ativa) {
+  const antiga = dialogo.querySelector('.folha-abas');
+  if (antiga) antiga.remove();
+  dialogo.prepend(montarAbas(ativa));
+}
+
+/* Fecha deixando a folha descer de volta ao rodapé. <dialog> sai da top layer
+ * assim que close() é chamado, então a animação roda antes. Se o usuário pediu
+ * menos movimento (ou a animação não dispara), fecha na hora. */
+const DURACAO_FECHAMENTO = 170;
+
+function fecharComAnimacao(dialogo) {
+  if (!dialogo.open || dialogo.classList.contains('is-fechando')) return;
+
+  const querAnimacao = matchMedia('(prefers-reduced-motion: no-preference)').matches;
+  if (!querAnimacao) { dialogo.close(); return; }
+
+  dialogo.classList.add('is-fechando');
+  let encerrado = false;
+  const encerrar = () => {
+    if (encerrado) return;
+    encerrado = true;
+    dialogo.classList.remove('is-fechando');
+    dialogo.close();
+  };
+  dialogo.addEventListener('animationend', encerrar, { once: true });
+  setTimeout(encerrar, DURACAO_FECHAMENTO + 80);      // rede de segurança
+}
+
+/* Trocar de folha não é fechar e abrir: a ficha fica, o conteúdo muda. Sem
+ * animação, senão a folha desceria e voltaria. */
+function trocarDeFolha(destino) {
+  for (const d of [els.ufDialog, els.buscaDialog]) {
+    d.classList.remove('is-fechando');
+    if (d.open) d.close();
+  }
+  /* a classe sai no evento `close`, não no próximo quadro: requestAnimationFrame
+   * roda antes de a animação começar, e a folha subia de novo */
+  const alvo = destino === 'uf' ? els.ufDialog : els.buscaDialog;
+  alvo.classList.add('sem-animacao');
+  if (destino === 'uf') abrirSeletorUf();
+  else abrirBusca();
 }
 
 function abrirSeletorUf() {
   montarListaUf();
+  els.ufBusca.value = '';
+  filtrarEstados();
   for (const b of opcoesUf()) {
     const atual = b.dataset.uf === state.uf;
     b.classList.toggle('is-atual', atual);
     if (atual) b.setAttribute('aria-current', 'true');
     else b.removeAttribute('aria-current');
   }
+  prepararAbas(els.ufDialog, 'uf');
   els.ufTrigger.setAttribute('aria-expanded', 'true');
+  els.ufPlaca.setAttribute('aria-expanded', 'true');
   els.ufDialog.showModal();
   const atual = els.ufList.querySelector('.uf-opcao.is-atual');
   if (atual) atual.scrollIntoView({ block: 'center' });
@@ -392,14 +514,23 @@ function abrirSeletorUf() {
 }
 
 function fecharSeletorUf() {
-  if (els.ufDialog.open) els.ufDialog.close();
+  fecharComAnimacao(els.ufDialog);
 }
 
-/* teclado dentro do diálogo: setas percorrem, letra salta para o estado (Esc e
- * o aprisionamento de foco vêm de graça no <dialog>) */
+/* teclado dentro do diálogo: setas percorrem a lista (Esc e o aprisionamento de
+ * foco vêm de graça no <dialog>). O salto por letra saiu quando entrou o campo
+ * de filtro: as letras agora vão para o campo, que faz melhor o mesmo serviço. */
 function tecladoNoSeletorUf(e) {
   const opcoes = opcoesUf();
   if (!opcoes.length) return;
+
+  /* no campo de filtro: seta desce para a lista, Enter escolhe o primeiro */
+  if (e.target === els.ufBusca) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); opcoes[0].focus(); }
+    else if (e.key === 'Enter') { e.preventDefault(); opcoes[0].click(); }
+    return;
+  }
+
   const atual = opcoes.indexOf(document.activeElement);
 
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -414,28 +545,28 @@ function tecladoNoSeletorUf(e) {
     opcoes[e.key === 'Home' ? 0 : opcoes.length - 1].focus();
     return;
   }
-  if (/^\p{L}$/u.test(e.key)) {
-    const letra = e.key.toLowerCase();
-    const combina = i => (NOME_DA_UF.get(opcoes[i].dataset.uf) || '')
-      .toLowerCase().startsWith(letra);
-    for (let n = 1; n <= opcoes.length; n++) {
-      const i = (Math.max(atual, 0) + n) % opcoes.length;
-      if (combina(i)) { opcoes[i].focus(); return; }
-    }
-  }
 }
 
 function ligarSeletorUf() {
   els.ufTrigger.addEventListener('click', abrirSeletorUf);
+  els.ufPlaca.addEventListener('click', abrirSeletorUf);
   els.ufClose.addEventListener('click', fecharSeletorUf);
   els.ufDialog.addEventListener('close', () => {
+    els.ufPlaca.setAttribute('aria-expanded', 'false');
+    const abas = els.ufDialog.querySelector('.folha-abas');
+    if (abas) abas.remove();          // não deixa fileira órfã na folha fechada
+    els.ufDialog.classList.remove('sem-animacao');
     els.ufTrigger.setAttribute('aria-expanded', 'false');
     els.ufTrigger.focus({ preventScroll: true });
   });
-  /* clique fora do conteúdo fecha */
+  /* clique fora do conteúdo fecha: no backdrop e na faixa das abas o alvo é o
+   * próprio <dialog> ou a fileira, nunca o corpo */
   els.ufDialog.addEventListener('click', e => {
-    if (e.target === els.ufDialog) fecharSeletorUf();
+    if (e.target === els.ufDialog || e.target.classList.contains('folha-abas')) {
+      fecharSeletorUf();
+    }
   });
+  els.ufBusca.addEventListener('input', filtrarEstados);
   els.ufList.addEventListener('click', e => {
     const opcao = e.target.closest('.uf-opcao');
     if (!opcao) return;
@@ -443,6 +574,7 @@ function ligarSeletorUf() {
     if (opcao.dataset.uf !== state.uf) trocarUf(opcao.dataset.uf);
   });
   els.ufDialog.addEventListener('keydown', tecladoNoSeletorUf);
+  els.ufDialog.addEventListener('cancel', e => { e.preventDefault(); fecharSeletorUf(); });
 }
 
 function montarCards() {
@@ -683,6 +815,7 @@ function ligarEventos(cargo) {
 }
 
 function depoisDeEditar(cargo) {
+  marcarMexido(cargo.key);
   renderAll();
   syncSink(cargo);
   syncUrl();
@@ -716,7 +849,373 @@ function hydrateFromUrl() {
     const arr = new Array(cargo.len).fill(null);
     for (let i = 0; i < bruto.length; i++) if (bruto[i] !== VAZIO) arr[i] = bruto[i];
     state.votes[cargo.key] = arr;
+    /* na ordem dos cargos: o que vem antes na URL conta como mexido há mais
+     * tempo, então a substituição por busca começa pela primeira vaga */
+    if (arr.some(d => d !== null)) marcarMexido(cargo.key);
   }
+}
+
+/* ------------------------------------------------- busca por nome (§46) */
+
+/* A lista abre completa, em ordem alfabética, e o campo filtra. Isso é
+ * compatível com o §46 — e mais neutro que ordenar por semelhança: ninguém é
+ * recomendado, destacado ou posto na frente. Nome é o primeiro critério, número
+ * do candidato o segundo. A ordenação acontece uma vez, na construção do
+ * índice, então filtrar não reordena nada. */
+
+const MIN_LETRAS = 2;
+
+/* conectivos não são exigidos na busca: "jose da silva" tem de achar
+ * "JOSE SILVA LIMA", que não tem a palavra "da" */
+const CONECTIVOS = new Set(['DE', 'DA', 'DO', 'DAS', 'DOS', 'E', 'DI', 'DU', 'AO', 'NA', 'NO']);
+const CARGO_POR_BASE = new Map();
+for (const c of CARGOS) if (!CARGO_POR_BASE.has(c.base)) CARGO_POR_BASE.set(c.base, c);
+
+/* na busca o cargo aparece sem a vaga: existe um Senado só, com duas vagas */
+function rotuloDaBase(base) {
+  return base === 's' ? 'Senador' : nomeDoCargo(CARGO_POR_BASE.get(base));
+}
+
+const normalizarNome = t => (t || '')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+
+let indiceBusca = null;
+let chaveDoIndice = '';
+
+/* chave muda quando a UF ou o estado de carga das bases muda */
+function chaveAtualDoIndice() {
+  const uf = bases.get(state.uf);
+  const br = bases.get('BR');
+  return state.uf + '|' + (uf ? uf.status : '-') + '|' + (br ? br.status : '-');
+}
+
+function construirIndice() {
+  const chave = chaveAtualDoIndice();
+  if (indiceBusca && chaveDoIndice === chave) return indiceBusca;
+
+  const itens = [];
+  for (const escopo of [state.uf, 'BR']) {
+    const base = bases.get(escopo);
+    if (!base || base.status !== 'ok') continue;
+    for (const [nomeBase, porNumero] of Object.entries(base.cargos)) {
+      if (!CARGO_POR_BASE.has(nomeBase)) continue;
+      for (const [numero, c] of Object.entries(porNumero)) {
+        if (!candidaturaExibivel(c)) continue;
+        const normal = normalizarNome(c.n);
+        itens.push({
+          nome: c.n, normal, palavras: normal.split(' '), sigla: c.p,
+          base: nomeBase, numero, escopo, temFoto: Boolean(c.f || c.foto), foto: c.foto, sq: c.sq,
+        });
+      }
+    }
+  }
+  /* ordena uma vez: nome, depois número do candidato */
+  itens.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR') ||
+                       Number(a.numero) - Number(b.numero));
+  indiceBusca = itens;
+  chaveDoIndice = chave;
+  return itens;
+}
+
+/* Distância de edição limitada: para além do limite, aborta e devolve o limite
+ * mais um. Comparar por palavra, e não pelo nome inteiro, é o que impede
+ * "haddad" de casar com "RICHARDSON DA PADARIA". */
+function distanciaAte(a, b, limite) {
+  if (Math.abs(a.length - b.length) > limite) return limite + 1;
+  let anterior = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const atual = [i];
+    let melhorDaLinha = i;
+    for (let j = 1; j <= b.length; j++) {
+      const custo = a[i - 1] === b[j - 1] ? 0 : 1;
+      atual[j] = Math.min(atual[j - 1] + 1, anterior[j] + 1, anterior[j - 1] + custo);
+      if (atual[j] < melhorDaLinha) melhorDaLinha = atual[j];
+    }
+    if (melhorDaLinha > limite) return limite + 1;
+    anterior = atual;
+  }
+  return anterior[b.length];
+}
+
+/* erro de digitação tolerado conforme o tamanho do termo; abaixo de 4 letras,
+ * nenhum — seria ruído */
+const toleranciaDe = termo => (termo.length >= 7 ? 2 : termo.length >= 4 ? 1 : 0);
+
+/* Todo termo digitado tem de casar de alguma forma; a pontuação premia começo
+ * de nome e começo de palavra. Nome mais curto desempata. */
+function pontuar(termos, palavras, normal) {
+  let total = 0;
+  for (const termo of termos) {
+    let ponto = 0;
+    if (normal.startsWith(termo)) {
+      ponto = 100;
+    } else {
+      for (const palavra of palavras) {
+        if (palavra.startsWith(termo)) { ponto = Math.max(ponto, 70); break; }
+        if (palavra.includes(termo)) ponto = Math.max(ponto, 40);
+      }
+    }
+    const limite = toleranciaDe(termo);
+    if (!ponto && limite) {
+      for (const palavra of palavras) {
+        if (distanciaAte(termo, palavra, limite) <= limite) { ponto = 20; break; }
+      }
+    }
+    if (!ponto) return -1;
+    total += ponto;
+  }
+  return total - normal.length / 100;
+}
+
+function buscarCandidatos(consulta) {
+  const itens = construirIndice();
+  const brutos = normalizarNome(consulta).split(' ').filter(t => t.length >= MIN_LETRAS);
+  const semConectivos = brutos.filter(t => !CONECTIVOS.has(t));
+  const termos = semConectivos.length ? semConectivos : brutos;
+
+  /* sem termo utilizável, a lista inteira — já ordenada */
+  if (!termos.length) return { termos, achados: itens };
+
+  const achados = itens.filter(item => pontuar(termos, item.palavras, item.normal) >= 0);
+  return { termos, achados };
+}
+
+const numeroCompletoDe = key => {
+  const digits = state.votes[key];
+  return digits.every(d => d !== null) ? digits.join('') : null;
+};
+
+/* Senado tem duas vagas (§21). Escolher pela busca sobrescreve, nesta ordem:
+ *   1. a vaga que já tem esse mesmo número — não duplica, é idempotente
+ *   2. a vaga vazia
+ *   3. a vaga sem candidato válido (número incompleto ou inexistente)
+ *   4. entre duas válidas, a mexida há mais tempo
+ * Sem isso, a busca atropelava sempre a primeira vaga, e buscar um terceiro
+ * senador sobrescrevia justamente quem acabou de ser escolhido. */
+function destinoDoResultado(item) {
+  if (item.base !== 's') return CARGO_POR_BASE.get(item.base).key;
+
+  const vagas = ['s1', 's2'];
+  const repetida = vagas.find(k => numeroCompletoDe(k) === item.numero);
+  if (repetida) return repetida;
+
+  const prioridade = key => {
+    const digits = state.votes[key];
+    if (digits.every(d => d === null)) return 0;              // vazia
+    return resolveCandidate(POR_KEY[key]).estado === 'valido' ? 2 : 1;
+  };
+
+  return vagas
+    .map(key => ({ key, ordem: prioridade(key), quando: state.mexidoEm[key] || 0 }))
+    .sort((a, b) => a.ordem - b.ordem || a.quando - b.quando)[0].key;
+}
+
+function preencherNumero(key, numero) {
+  const cargo = POR_KEY[key];
+  const digits = state.votes[key];
+  for (let i = 0; i < cargo.len; i++) digits[i] = numero[i] || null;
+  marcarMexido(key);
+  state.focus = null;
+  renderAll();
+  syncSink(cargo);
+  syncUrl();
+}
+
+function linhaDeResultado(item) {
+  const li = document.createElement('li');
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'busca-opcao';
+  b.dataset.base = item.base;
+  b.dataset.numero = item.numero;
+
+  const paleta = paletaDoPartido(item.sigla);
+  if (paleta) {
+    b.style.setProperty('--c', paleta.cor);
+    b.style.setProperty('--c-txt', paleta.texto);
+    b.style.setProperty('--c-escura', paleta.escura);
+  }
+
+  const foto = item.temFoto
+    ? fotoUrlSegura(item.foto || fotoLocal(item.escopo, item.sq))
+    : null;
+  if (foto) {
+    const img = document.createElement('img');
+    img.className = 'busca-foto';
+    img.src = foto;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.referrerPolicy = 'no-referrer';
+    b.appendChild(img);
+  } else {
+    const vazio = document.createElement('span');
+    vazio.className = 'busca-foto';
+    b.appendChild(vazio);
+  }
+
+  const ident = document.createElement('span');
+  ident.className = 'busca-ident';
+  const nome = document.createElement('span');
+  nome.className = 'busca-nome';
+  nome.textContent = item.nome;                 // textContent sempre (§38)
+  const meta = document.createElement('span');
+  meta.className = 'busca-meta';
+  const partido = document.createElement('span');
+  partido.className = 'busca-partido';
+  partido.textContent = item.sigla;
+  const cargo = document.createElement('span');
+  cargo.className = 'busca-cargo';
+  cargo.textContent = rotuloDaBase(item.base);
+  meta.append(partido, cargo);
+  ident.append(nome, meta);
+
+  const numero = document.createElement('span');
+  numero.className = 'busca-numero';
+  numero.textContent = item.numero;
+
+  b.append(ident, numero);
+  b.setAttribute('aria-label', item.nome + ', ' + item.sigla + ', ' +
+    rotuloDaBase(item.base) + ', número ' + item.numero.split('').join(' '));
+  li.appendChild(b);
+  return li;
+}
+
+let resultadosDaBusca = [];
+let mostradosNaBusca = 0;
+let sentinela = null;
+let observadorDoFim = null;
+
+/* acrescenta a próxima página e mantém a sentinela no fim da lista */
+function mostrarMaisResultados() {
+  const proximos = resultadosDaBusca.slice(mostradosNaBusca, mostradosNaBusca + PAGINA_BUSCA);
+  if (!proximos.length) {
+    if (sentinela) sentinela.remove();
+    return;
+  }
+  const fragmento = document.createDocumentFragment();
+  for (const item of proximos) fragmento.appendChild(linhaDeResultado(item));
+  els.buscaLista.insertBefore(fragmento, sentinela);
+  mostradosNaBusca += proximos.length;
+  if (mostradosNaBusca >= resultadosDaBusca.length && sentinela) sentinela.remove();
+}
+
+function renderBusca() {
+  const { termos, achados } = buscarCandidatos(els.buscaInput.value);
+  resultadosDaBusca = achados;
+  mostradosNaBusca = 0;
+  els.buscaLista.replaceChildren();
+
+  const baseUf = bases.get(state.uf);
+  if (!baseUf || baseUf.status !== 'ok') {
+    els.buscaContagem.textContent = 'carregando dados…';
+    return;
+  }
+  if (!achados.length) {
+    els.buscaContagem.textContent = termos.length
+      ? 'nenhum candidato encontrado em ' + state.uf
+      : 'nenhum candidato na base de ' + state.uf;
+    return;
+  }
+  /* com resultados na tela a contagem não informa nada que a lista não mostre */
+  els.buscaContagem.textContent = '';
+
+  /* sentinela do scroll infinito, sempre no fim da lista */
+  sentinela = document.createElement('li');
+  sentinela.className = 'busca-fim';
+  sentinela.setAttribute('aria-hidden', 'true');
+  els.buscaLista.appendChild(sentinela);
+
+  if (!observadorDoFim) {
+    observadorDoFim = new IntersectionObserver(entradas => {
+      if (entradas.some(e => e.isIntersecting)) mostrarMaisResultados();
+    }, { root: els.buscaLista, rootMargin: '240px' });
+  }
+  mostrarMaisResultados();
+  observadorDoFim.observe(sentinela);
+}
+
+function abrirBusca() {
+  els.buscaInput.value = '';
+  els.buscaLista.scrollTop = 0;
+  renderBusca();
+  prepararAbas(els.buscaDialog, 'busca');
+  els.buscaTrigger.setAttribute('aria-expanded', 'true');
+  els.buscaDialog.showModal();
+  els.buscaInput.focus({ preventScroll: true });
+}
+
+function fecharBusca() {
+  fecharComAnimacao(els.buscaDialog);
+}
+
+function escolherResultado(botao) {
+  const item = { base: botao.dataset.base };
+  fecharBusca();
+  preencherNumero(destinoDoResultado(item), botao.dataset.numero);
+}
+
+function opcoesBusca() {
+  return [...els.buscaLista.querySelectorAll('.busca-opcao')];
+}
+
+function ligarBusca() {
+  els.buscaTrigger.addEventListener('click', abrirBusca);
+  els.buscaClose.addEventListener('click', fecharBusca);
+  els.buscaDialog.addEventListener('close', () => {
+    const abas = els.buscaDialog.querySelector('.folha-abas');
+    if (abas) abas.remove();          // não deixa fileira órfã na folha fechada
+    els.buscaDialog.classList.remove('sem-animacao');
+    els.buscaTrigger.setAttribute('aria-expanded', 'false');
+    els.buscaTrigger.focus({ preventScroll: true });
+  });
+  els.buscaInput.addEventListener('input', renderBusca);
+
+  /* clique fora do conteúdo fecha: no backdrop, o alvo é o próprio <dialog> */
+  els.buscaDialog.addEventListener('click', e => {
+    if (e.target === els.buscaDialog || e.target.classList.contains('folha-abas')) {
+      fecharBusca();
+    }
+  });
+
+  els.buscaLista.addEventListener('click', e => {
+    const opcao = e.target.closest('.busca-opcao');
+    if (opcao) escolherResultado(opcao);
+  });
+
+  els.buscaInput.addEventListener('keydown', e => {
+    const opcoes = opcoesBusca();
+    if (e.key === 'Escape') {
+      e.preventDefault();               // fecha em vez de só limpar o campo
+      fecharBusca();
+    } else if (e.key === 'Enter' && opcoes.length) {
+      e.preventDefault();
+      escolherResultado(opcoes[0]);
+    } else if (e.key === 'ArrowDown' && opcoes.length) {
+      e.preventDefault();
+      opcoes[0].focus();
+    }
+  });
+
+  els.buscaDialog.addEventListener('cancel', e => { e.preventDefault(); fecharBusca(); });
+
+  els.buscaLista.addEventListener('keydown', e => {
+    const opcoes = opcoesBusca();
+    const atual = opcoes.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const i = atual + (e.key === 'ArrowDown' ? 1 : -1);
+      if (i < 0) els.buscaInput.focus();
+      else if (i < opcoes.length) opcoes[i].focus();
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      opcoes[0].focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      opcoes[opcoes.length - 1].focus();
+    }
+  });
 }
 
 /* --------------------------------------------------------------- render */
@@ -809,10 +1308,6 @@ function atualizarStatus() {
   } else if (meta && meta.fonte && meta.fonte !== 'TSE') {
     els.status.textContent = 'dados de exemplo — base não oficial (' + meta.fonte + ')';
     els.status.dataset.kind = 'warn';
-  } else if (meta && meta.situacaoPublicada === false) {
-    /* registros protocolados, julgamento ainda não publicado pelo TSE (§13) */
-    els.status.textContent = 'registros ainda não julgados pelo TSE';
-    els.status.dataset.kind = 'info';
   } else {
     els.status.textContent = '';
     els.status.dataset.kind = 'info';
@@ -882,6 +1377,7 @@ function init() {
   syncUrl();                          // normaliza a URL logo na abertura
 
   ligarSeletorUf();
+  ligarBusca();
   els.share.addEventListener('click', compartilhar);
   observarTecladoVirtual();
 

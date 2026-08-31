@@ -10,7 +10,12 @@
  * Só resolve as siglas que estão de fato na base gerada por update-data.mjs.
  * Sigla sem cor não derruba o build: o front cai no hash da paleta neutra.
  *
+ * As cores já presentes em data/cores-partidos.json são PRESERVADAS: o arquivo
+ * é curadoria, e rodar o script de novo não pode apagar ajuste feito à mão.
+ * O Wikidata só preenche o que está faltando. Para refazer tudo, --refazer.
+ *
  *   node scripts/update-party-colors.mjs
+ *   node scripts/update-party-colors.mjs --refazer   # descarta a curadoria
  */
 
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
@@ -137,21 +142,48 @@ async function doWikidata(consulta) {
   return indice;
 }
 
+const REFAZER = process.argv.includes('--refazer');
+
+/* o que já está no arquivo é curadoria e tem precedência */
+function coresExistentes() {
+  const caminho = join(DIR_DATA, 'cores-partidos.json');
+  if (!existsSync(caminho)) return { cores: {}, origem: {} };
+  try {
+    const json = JSON.parse(readFileSync(caminho, 'utf8'));
+    return { cores: json.cores || {}, origem: json.origem || {} };
+  } catch (e) {
+    console.error('\n✖ data/cores-partidos.json ilegível: ' + e.message + '\n');
+    process.exit(1);
+  }
+}
+
 const siglas = siglasDaBase();
 console.log('siglas na base: ' + siglas.size);
+
+const anteriores = REFAZER ? { cores: {}, origem: {} } : coresExistentes();
+const preservadas = [];
 const indice = await doWikidata(CONSULTA);
 console.log('chaves com cor (consulta restrita): ' + indice.size);
 const indiceAmplo = await doWikidata(CONSULTA_AMPLA);
 console.log('chaves com cor (consulta ampla): ' + indiceAmplo.size);
 
 const cores = {};
+const origem = {};
 const conflitos = [];
 const semCor = [];
 const amplas = [];
 
 for (const sigla of [...siglas].sort()) {
+  const anterior = anteriores.cores[sigla];
+  if (anterior) {
+    cores[sigla] = String(anterior).toUpperCase().replace('#', '');
+    origem[sigla] = anteriores.origem[sigla] || 'curadoria';
+    preservadas.push(sigla);
+    continue;
+  }
   if (CORES_MANUAIS[sigla]) {
     cores[sigla] = CORES_MANUAIS[sigla][0].toUpperCase().replace('#', '');
+    origem[sigla] = 'manual';
     console.log('  ✔ ' + sigla.padEnd(18) + '#' + cores[sigla] + '  (manual: ' + CORES_MANUAIS[sigla][1] + ')');
     continue;
   }
@@ -171,6 +203,7 @@ for (const sigla of [...siglas].sort()) {
     conflitos.push(sigla + ' → ' + lista.map(c => '#' + c + ' (' + achadas.get(c) + ')').join(', '));
   }
   cores[sigla] = lista[0];
+  origem[sigla] = viaAmpla ? 'wikidata-amplo' : 'wikidata';
   if (viaAmpla) amplas.push(sigla + ' → #' + lista[0] + ' (' + achadas.get(lista[0]) + ')');
   console.log('  ✔ ' + sigla.padEnd(18) + '#' + lista[0] +
               (viaAmpla ? '  (consulta ampla)' : '') +
@@ -181,6 +214,10 @@ if (conflitos.length) {
   console.log('\n  ⚠ conflito de cor (defina em CORES_MANUAIS se a escolhida estiver errada):');
   for (const c of conflitos) console.log('     ' + c);
 }
+if (preservadas.length) {
+  console.log('  ' + preservadas.length + ' cores preservadas do arquivo atual ' +
+              '(use --refazer para descartar): ' + preservadas.join(', '));
+}
 if (amplas.length) {
   console.log('\n  ℹ resolvidas pela consulta ampla — confira se a entidade é mesmo o partido:');
   for (const a of amplas) console.log('     ' + a);
@@ -189,9 +226,14 @@ if (semCor.length) {
   console.log('\n  ⚠ sem cor no Wikidata, cairão no hash da paleta neutra (§16): ' + semCor.join(', '));
 }
 
+const doWiki = Object.values(origem).filter(o => o.startsWith('wikidata')).length;
 writeFileSync(join(DIR_DATA, 'cores-partidos.json'), JSON.stringify({
-  fonte: 'Wikidata (P465)',
+  fonte: preservadas.length
+    ? 'curadoria manual (' + preservadas.length + ') + Wikidata P465 (' + doWiki + ')'
+    : 'Wikidata (P465)',
   atualizadoEm: new Date().toISOString(),
+  /* procedência por sigla: curadoria | manual | wikidata | wikidata-amplo */
+  origem,
   cores,
 }, null, 1));
 

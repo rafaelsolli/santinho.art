@@ -114,9 +114,12 @@ async function escolherUf(uf) {
   await page.click('#uf-trigger');
   await sleep(120);
   await page.click(`.uf-opcao[data-uf="${uf}"]`);
-  await sleep(250);
+  await esperarFolhaFechar();
 }
 const siglaNoCabecalho = () => page.$eval('#uf-sigla', e => e.textContent);
+
+/* a folha desce animada (~170ms) antes de o <dialog> fechar de fato */
+const esperarFolhaFechar = () => sleep(420);
 
 /* ------------------------------------------------- §50 viewports: sem scroll */
 console.log('\n== §50 viewports (zero scroll vertical, zero overflow horizontal)');
@@ -147,6 +150,95 @@ for (const [w, h] of [[320,640],[360,800],[375,667],[390,844],[412,915],[430,932
         const alvos = [c.querySelector('.name'), c.querySelector('.office'), c.querySelector('.party')];
         return alvos.every(e => e.hidden || e.scrollWidth <= e.clientWidth + 1);
       }),
+      cromo: (() => {
+        const r = sel => document.querySelector(sel).getBoundingClientRect();
+        const placa = r('#uf-placa-trigger'), uf = r('#uf-trigger');
+        const busca = r('#busca-trigger'), share = r('#share'), cards = r('.cards');
+        /* cabeçalho e rodapé têm alturas próprias: os controles de cima são
+           mais baixos para o subtítulo passar por baixo deles sem encavalar */
+        const alturasTopo = [placa.height, share.height];
+        const alturasRodape = [uf.height, busca.height];
+        const h1 = document.querySelector('.brand-name');
+        const marcaVisivel = getComputedStyle(h1).display !== 'none';
+        const faixa = document.createRange();
+        faixa.selectNodeContents(h1);
+        const tituloTexto = faixa.getBoundingClientRect();
+        const ctrl = document.querySelector('.controls').getBoundingClientRect();
+        const sub = document.querySelector('.tagline');
+        /* com as fixtures o aviso "dados de exemplo" esconde o subtítulo, e a
+           asserção passaria sem medir nada: força a visibilidade para medir */
+        document.body.classList.remove('has-status');
+        const subVisivel = getComputedStyle(sub).display !== 'none';
+        return {
+          /* placa de estado e compartilhar dividem a primeira faixa */
+          placaNoCabecalho: placa.top < cards.top,
+          placaAntesDoShare: placa.right <= share.left + 1,
+          /* dentro de cada faixa, os controles têm a mesma altura */
+          mesmaAlturaTopo: Math.abs(alturasTopo[0] - alturasTopo[1]) < 0.6,
+          mesmaAlturaRodape: Math.abs(alturasRodape[0] - alturasRodape[1]) < 0.6,
+          topoMaisBaixoQueRodape: alturasTopo[0] < alturasRodape[0] + 0.5,
+          /* trocar estado e buscar no rodapé, abaixo dos cards e dentro da tela */
+          rodapeDentro: busca.bottom <= innerHeight + 0.5 && uf.top >= cards.bottom - 0.5,
+          shareDentro: share.right <= innerWidth,
+          /* a marca não ganhou espaços parasitas nem encavala na placa; em tela
+             minúscula ela cede lugar, e aí não há o que medir */
+          marca: h1.textContent,
+          /* o ".art" recua num cinza discreto, sem perder contraste de texto
+             grande (3:1); "santinho" segue em tinta cheia */
+          sufixoMaisClaro: (() => {
+            const lum = cor => {
+              const [r2, g2, b2] = cor.match(/\d+/g).map(Number);
+              const f = v => { const x = v / 255; return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); };
+              return 0.2126 * f(r2) + 0.7152 * f(g2) + 0.0722 * f(b2);
+            };
+            const sufixo = document.querySelector('.brand-sufixo');
+            if (!sufixo) return false;
+            const lSuf = lum(getComputedStyle(sufixo).color);
+            const lTitulo = lum(getComputedStyle(h1).color);
+            const lFundo = lum(getComputedStyle(document.body).backgroundColor);
+            const razao = (Math.max(lSuf, lFundo) + 0.05) / (Math.min(lSuf, lFundo) + 0.05);
+            return lSuf > lTitulo && razao >= 3;
+          })(),
+          marcaVisivel,
+          marcaCabe: !marcaVisivel || tituloTexto.right <= placa.left,
+          tituloNoTopo: !marcaVisivel || Math.abs(tituloTexto.top - ctrl.top) <= 3,
+          subVisivel,
+          /* o subtítulo é de largura cheia e passa por baixo dos controles:
+             não pode sobrepor nenhum deles */
+          subSobrepoeControles: !subVisivel ? false : (() => {
+            const r2 = document.createRange();
+            r2.selectNodeContents(sub);
+            const t2 = r2.getBoundingClientRect();
+            return ['#uf-placa-trigger', '#share'].some(sel => {
+              const c = document.querySelector(sel).getBoundingClientRect();
+              return t2.right > c.left && t2.bottom > c.top && t2.top < c.bottom;
+            });
+          })(),
+          subtituloUmaLinha: !subVisivel || Math.round(
+            sub.getBoundingClientRect().height /
+            (parseFloat(getComputedStyle(sub).fontSize) * 1.25)) === 1,
+          subCentrado: !subVisivel ? true : (() => {
+            const r4 = document.createRange();
+            r4.selectNodeContents(sub);
+            const t4 = r4.getBoundingClientRect();
+            const caixa = sub.getBoundingClientRect();
+            return Math.abs((t4.left + t4.right) / 2 - (caixa.left + caixa.right) / 2) <= 1.5;
+          })(),
+          /* a folga que importa agora é do subtítulo para os botões acima dele:
+             ele passa por baixo deles e não pode ficar colado */
+          folgaSubBotoes: !subVisivel ? null : (() => {
+            const r3 = document.createRange();
+            r3.selectNodeContents(sub);
+            const t3 = r3.getBoundingClientRect();
+            const abaixo = Math.max(placa.bottom, share.bottom);
+            return +(t3.top - abaixo).toFixed(1);
+          })(),
+          folgaSubtitulo: (subVisivel && marcaVisivel)
+            ? +((() => { const r2 = document.createRange(); r2.selectNodeContents(sub);
+                         return r2.getBoundingClientRect().top; })() - tituloTexto.bottom).toFixed(1)
+            : null,
+        };
+      })(),
     };
   });
   const tag = w + 'x' + h;
@@ -157,6 +249,29 @@ for (const [w, h] of [[320,640],[360,800],[375,667],[390,844],[412,915],[430,932
   ok('numero cabe no card', m.digitsFit, tag);
   ok('nome visivel', m.nameVisible, tag);
   ok('tag/cargo/partido sem truncar', m.semTruncar, tag);
+  ok('placa de estado no cabecalho, antes do compartilhar',
+     m.cromo.placaNoCabecalho && m.cromo.placaAntesDoShare, tag);
+  ok('placa e compartilhar com a mesma altura', m.cromo.mesmaAlturaTopo, tag);
+  ok('as duas abas do rodape com a mesma altura', m.cromo.mesmaAlturaRodape, tag);
+  ok('controles do topo mais baixos que as abas', m.cromo.topoMaisBaixoQueRodape, tag);
+  ok('estado e busca no rodape, dentro da tela', m.cromo.rodapeDentro, tag);
+  ok('compartilhar dentro da tela', m.cromo.shareDentro, tag);
+  ok('marca cabe sem encavalar na placa', m.cromo.marcaCabe, tag);
+  ok('titulo na mesma faixa dos controles', m.cromo.tituloNoTopo, tag);
+  ok('subtitulo em uma linha', m.cromo.subtituloUmaLinha, tag);
+  ok('subtitulo nao encavala na placa nem no compartilhar',
+     !m.cromo.subSobrepoeControles, tag);
+  ok('subtitulo centrado na faixa', m.cromo.subCentrado, tag);
+  ok('subtitulo com respiro dos botoes (4 a 12px)',
+     m.cromo.folgaSubBotoes === null ||
+     (m.cromo.folgaSubBotoes >= 4 && m.cromo.folgaSubBotoes <= 12),
+     tag + ' (' + m.cromo.folgaSubBotoes + 'px)');
+  ok('distancia titulo-subtitulo entre 2 e 16px',
+     m.cromo.folgaSubtitulo === null ||
+     (m.cromo.folgaSubtitulo >= 2 && m.cromo.folgaSubtitulo <= 16),
+     tag + ' (' + m.cromo.folgaSubtitulo + 'px)');
+  eq('marca sem espacos parasitas ' + tag, m.cromo.marca, 'santinho.art');
+  ok('".art" em cinza mais claro que "santinho"', m.cromo.sufixoMaisClaro, tag);
 }
 
 /* pior caso: card de 5 dígitos focado, com a tag VOTO DE LEGENDA */
@@ -451,9 +566,12 @@ page.on('request', atrasar);
 await page.goto(BASE + '?uf=sp&df=1313', { waitUntil: 'domcontentloaded' });
 await sleep(200);
 eq('indicacao discreta enquanto carrega', await page.$eval('#status', e => e.textContent), 'carregando dados…');
+/* a intenção é "nada cobrindo a interface": nenhum diálogo aberto e o ponto
+   central pertencendo à área dos cards (pode cair no vão entre dois) */
 eq('nao bloqueia: nenhum overlay', await page.evaluate(() => {
   const el = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
-  return el ? el.closest('.card') !== null : false;
+  return !document.querySelector('dialog[open]') &&
+         Boolean(el) && Boolean(el.closest('.cards'));
 }), true);
 ok('permite digitar antes da base chegar', await (async () => {
   await page.click('.card[data-cargo="g"] .digit[data-index="0"]');
@@ -560,6 +678,154 @@ ok('numero em cor escura contrasta com o card',
    razao(cores.fut.corDigito, fundoCard) >= 4.5,
    '(' + razao(cores.fut.corDigito, fundoCard).toFixed(2) + ':1)');
 
+/* ------------------------------------------------ folha puxada do rodapé */
+console.log('\n== folha: a aba sobe do botão do rodapé e leva a ficha');
+await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+await page.goto(BASE + '?uf=sp&g=13', { waitUntil: 'networkidle0' });
+await sleep(250);
+
+/* medido pela API de animações, não por amostragem de quadros: o primeiro e o
+   último quadro são lidos com a animação pausada, então o teste é determinístico */
+const viagem = await page.evaluate(async () => {
+  const rodape = document.getElementById('uf-trigger').getBoundingClientRect();
+  document.getElementById('uf-trigger').click();
+  await new Promise(r => requestAnimationFrame(r));
+  const d = document.getElementById('uf-dialog');
+  const anim = d.getAnimations()[0];
+  if (!anim) return { semAnimacao: true };
+  anim.pause();
+  anim.currentTime = 0;
+  const inicio = d.querySelector('.folha-abas').getBoundingClientRect();
+  anim.currentTime = anim.effect.getTiming().duration;
+  const fim = d.querySelector('.folha-abas').getBoundingClientRect();
+  anim.play();
+  return {
+    nome: anim.animationName,
+    abaNoInicio: Math.round(inicio.top),
+    botaoDoRodape: Math.round(rodape.top),
+    abaNoFim: Math.round(fim.top),
+  };
+});
+eq('a folha sobe', viagem.nome, 'folha-sobe');
+eq('a aba parte do pixel exato do botao do rodape', viagem.abaNoInicio, viagem.botaoDoRodape);
+ok('a aba sobe junto com a ficha', viagem.abaNoFim < viagem.abaNoInicio - 200,
+   '(' + viagem.abaNoInicio + ' → ' + viagem.abaNoFim + ')');
+await sleep(400);
+
+/* a aba fica no topo da folha, colada no corpo, alinhada com o rodapé */
+const ficha = await page.evaluate(() => {
+  const d = document.querySelector('dialog[open]');
+  const abas = d.querySelector('.folha-abas').getBoundingClientRect();
+  const corpo = d.querySelector('.folha-corpo').getBoundingClientRect();
+  const par = nome => [
+    document.getElementById(nome === 'uf' ? 'uf-trigger' : 'busca-trigger').getBoundingClientRect(),
+    d.querySelector('[data-aba="' + nome + '"]').getBoundingClientRect(),
+  ];
+  const [rUf, aUf] = par('uf');
+  const [rBusca, aBusca] = par('busca');
+  return {
+    abaAcimaDoCorpo: abas.bottom <= corpo.top + 0.5,
+    abaColadaNoCorpo: Math.abs(abas.bottom - corpo.top) < 1,
+    corpoAteAbase: Math.abs(innerHeight - corpo.bottom) < 1,
+    ufAlinhada: Math.abs(rUf.x - aUf.x) < 1 && Math.abs(rUf.width - aUf.width) < 1,
+    buscaAlinhada: Math.abs(rBusca.x - aBusca.x) < 1,
+    ativaInerte: d.querySelector('.is-ativa').tagName,
+    ativa: d.querySelector('.is-ativa').dataset.aba,
+  };
+});
+ok('a aba fica no topo da folha', ficha.abaAcimaDoCorpo && ficha.abaColadaNoCorpo);
+const atrasDaFicha = await page.evaluate(() => {
+  const d = document.querySelector('dialog[open]');
+  const est = e => getComputedStyle(e).boxShadow;
+  return {
+    ativa: est(d.querySelector('.aba.is-ativa')),
+    atras: est(d.querySelector('.aba:not(.is-ativa)')),
+    rodape: est(document.getElementById('busca-trigger')),
+  };
+});
+eq('a aba ativa nao tem sombra: funde no corpo', atrasDaFicha.ativa, 'none');
+eq('as duas fichas tem as bordas de cima arredondadas', await page.evaluate(() => {
+  const raio = sel => {
+    const c = document.querySelector(sel + ' .folha-corpo');
+    const e = getComputedStyle(c);
+    return [e.borderTopLeftRadius, e.borderTopRightRadius, e.borderBottomLeftRadius];
+  };
+  return { uf: raio('#uf-dialog'), busca: raio('#busca-dialog') };
+}), { uf: ['18px', '18px', '0px'], busca: ['18px', '18px', '0px'] });
+ok('a aba de tras tem sombra interna na base', atrasDaFicha.atras.includes('inset'),
+   '(' + atrasDaFicha.atras.slice(0, 60) + '…)');
+ok('a aba fechada tambem tem a sombra interna', atrasDaFicha.rodape.includes('inset'));
+ok('o corpo da ficha desce até a base da tela', ficha.corpoAteAbase);
+ok('abas alinhadas em x com os botoes do rodape', ficha.ufAlinhada && ficha.buscaAlinhada);
+eq('a aba da folha aberta nao e um botao', ficha.ativaInerte, 'SPAN');
+eq('a aba ativa e a da folha aberta', ficha.ativa, 'uf');
+
+/* trocar de aba não desce e sobe: a ficha fica parada, só o conteúdo muda */
+const troca = await page.evaluate(async () => {
+  const antes = Math.round(document.querySelector('dialog[open] .folha-abas').getBoundingClientRect().top);
+  document.querySelector('#uf-dialog [data-aba="busca"]').click();
+  const posicoes = [];
+  for (let i = 0; i < 5; i++) {
+    await new Promise(r => requestAnimationFrame(r));
+    const ab = document.querySelector('dialog[open] .folha-abas');
+    posicoes.push(ab ? Math.round(ab.getBoundingClientRect().top) : null);
+  }
+  const d = document.querySelector('dialog[open]');
+  return { antes, posicoes, animacoes: d.getAnimations().length,
+           uf: document.getElementById('uf-dialog').open,
+           busca: document.getElementById('busca-dialog').open,
+           ativa: d.querySelector('.is-ativa').dataset.aba,
+           fileiras: document.querySelectorAll('.folha-abas').length };
+});
+eq('troca de folha sem mexer na ficha', troca.posicoes, Array(5).fill(troca.antes));
+eq('nenhuma animacao na troca', troca.animacoes, 0);
+eq('a folha certa fica aberta', [troca.uf, troca.busca, troca.ativa], [false, true, 'busca']);
+eq('sem fileira orfa', troca.fileiras, 1);
+await page.click('#busca-dialog [data-aba="uf"]');
+await sleep(250);
+eq('volta pela aba', await page.evaluate(() => document.getElementById('uf-dialog').open), true);
+
+/* a placa do cabeçalho puxa a mesma ficha */
+await page.keyboard.press('Escape'); await esperarFolhaFechar();
+await page.click('#uf-placa-trigger'); await sleep(450);
+eq('placa do cabecalho abre a ficha de estado',
+   await page.evaluate(() => document.getElementById('uf-dialog').open), true);
+eq('aria-expanded da placa acompanha',
+   await page.$eval('#uf-placa-trigger', e => e.getAttribute('aria-expanded')), 'true');
+await page.keyboard.press('Escape'); await esperarFolhaFechar();
+eq('aria-expanded da placa volta',
+   await page.$eval('#uf-placa-trigger', e => e.getAttribute('aria-expanded')), 'false');
+await page.click('#uf-trigger'); await sleep(450);
+
+/* fechando, a ficha desce de volta para o rodapé */
+const volta = await page.evaluate(async () => {
+  const d = document.getElementById('uf-dialog');
+  const rodape = Math.round(document.getElementById('uf-trigger').getBoundingClientRect().top);
+  document.getElementById('uf-close').click();
+  await new Promise(r => requestAnimationFrame(r));
+  const anim = d.getAnimations()[0];
+  if (!anim) return { semAnimacao: true };
+  anim.pause();
+  anim.currentTime = anim.effect.getTiming().duration;
+  const fim = Math.round(d.querySelector('.folha-abas').getBoundingClientRect().top);
+  anim.play();
+  return { nome: anim.animationName, fim, rodape };
+});
+eq('a folha desce', volta.nome, 'folha-desce');
+eq('desce até o pixel do botao do rodape', volta.fim, volta.rodape);
+await esperarFolhaFechar();
+eq('fecha depois de descer', await page.$eval('#uf-dialog', e => e.open), false);
+eq('sem classe de fechamento pendurada',
+   await page.$eval('#uf-dialog', e => e.classList.contains('is-fechando')), false);
+
+/* quem pede menos movimento fecha na hora */
+await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+await page.click('#uf-trigger'); await sleep(200);
+await page.keyboard.press('Escape'); await sleep(90);
+eq('prefers-reduced-motion fecha sem esperar animacao',
+   await page.$eval('#uf-dialog', e => e.open), false);
+await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }]);
+
 /* ------------------------------------------- seletor de UF (bandeira + sigla) */
 console.log('\n== seletor de UF: diálogo com bandeira, nome e sigla');
 await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
@@ -567,8 +833,14 @@ await page.goto(BASE + '?uf=sp&g=13', { waitUntil: 'networkidle0' });
 await sleep(200);
 eq('cabecalho mostra so a sigla', await siglaNoCabecalho(), 'SP');
 eq('cabecalho tem bandeira', await page.$eval('#uf-flag', e => e.getAttribute('src')), 'assets/flags/SP.png');
-eq('nome do estado no aria-label', await page.$eval('#uf-trigger', e => e.getAttribute('aria-label')),
-   'Estado: São Paulo. Trocar de estado');
+eq('placa do cabecalho nomeia o estado', await page.$eval('#uf-placa-trigger', e => e.getAttribute('aria-label')),
+   'Estado: SP — São Paulo. Trocar estado');
+eq('botao do rodape nomeia a acao', await page.$eval('#uf-trigger', e => e.getAttribute('aria-label')),
+   'Trocar estado, hoje São Paulo');
+ok('sigla visivel contida no nome acessivel da placa (WCAG 2.5.3)', await page.evaluate(() => {
+  const b = document.getElementById('uf-placa-trigger');
+  return b.getAttribute('aria-label').includes(b.querySelector('.uf-sigla').textContent);
+}));
 eq('dialogo fechado no inicio', await page.$eval('#uf-dialog', e => e.open), false);
 eq('aria-expanded false', await page.$eval('#uf-trigger', e => e.getAttribute('aria-expanded')), 'false');
 eq('as 27 bandeiras nao entram no primeiro carregamento',
@@ -599,12 +871,14 @@ ok('bandeiras carregaram de verdade', await page.evaluate(async () => {
 const caixa = await page.evaluate(() => {
   const r = document.getElementById('uf-dialog').getBoundingClientRect();
   return { x: Math.round(r.x), largura: Math.round(r.width), viewport: innerWidth,
-           base: Math.round(innerHeight - r.bottom), altura: Math.round(r.height) };
+           base: Math.round(innerHeight - r.bottom), altura: Math.round(r.height),
+           tela: innerHeight };
 });
+const innerHeightDoTeste = caixa.tela;
 eq('folha ocupa a largura da tela no celular', [caixa.x, caixa.largura], [0, caixa.viewport]);
 eq('folha encostada na base', caixa.base, 0);
-ok('folha nao toma a tela toda', caixa.altura < caixa.viewport * 2 && caixa.altura <= 660,
-   '(' + caixa.altura + 'px)');
+ok('folha do estado com 80% da tela', Math.abs(caixa.altura - innerHeightDoTeste * 0.8) <= 2,
+   '(' + caixa.altura + ' de ' + innerHeightDoTeste + 'px)');
 ok('a lista rola dentro do dialogo, nao na pagina', await page.evaluate(() => {
   const de = document.scrollingElement;
   return de.scrollHeight - de.clientHeight <= 1;
@@ -616,10 +890,42 @@ await page.keyboard.press('ArrowUp');
 eq('ArrowUp volta', await page.evaluate(() => document.activeElement.dataset.uf), 'SP');
 await page.keyboard.press('Home');
 eq('Home vai para o primeiro', await page.evaluate(() => document.activeElement.dataset.uf), 'AC');
-await page.keyboard.press('b');
-eq('letra salta para o estado (Bahia)', await page.evaluate(() => document.activeElement.dataset.uf), 'BA');
+/* campo de filtro no lugar do salto por letra */
+const filtrarUf = async texto => {
+  await page.evaluate(() => { document.getElementById('uf-busca').value = ''; });
+  if (texto) await page.type('#uf-busca', texto, { delay: 6 });
+  else await page.evaluate(() => document.getElementById('uf-busca').dispatchEvent(new Event('input')));
+  await sleep(160);
+  return page.evaluate(() => ({
+    visiveis: [...document.querySelectorAll('#uf-list .uf-opcao')]
+      .filter(b => !b.parentElement.hidden).map(b => b.dataset.uf),
+    msg: document.getElementById('uf-contagem').textContent,
+  }));
+};
+eq('sem filtro, os 27 estados', (await filtrarUf('')).visiveis.length, 27);
+eq('filtra por nome', (await filtrarUf('minas')).visiveis, ['MG']);
+eq('filtra sem acento', (await filtrarUf('ceara')).visiveis, ['CE']);
+eq('filtra por sigla', (await filtrarUf('rj')).visiveis, ['RJ']);
+eq('filtro parcial casa varios', (await filtrarUf('rio')).visiveis, ['RJ', 'RN', 'RS']);
+eq('prefixo de palavra, nao substring', (await filtrarUf('ri')).visiveis, ['RJ', 'RN', 'RS']);
+eq('varios termos somam', (await filtrarUf('rio grande')).visiveis, ['RN', 'RS']);
+eq('termo casa palavra do meio', (await filtrarUf('grande sul')).visiveis, ['RS']);
+eq('sigla nao vira substring de nome', (await filtrarUf('sp')).visiveis, ['SP']);
+eq('sem resultado avisa', (await filtrarUf('zzz')).msg, 'nenhum estado encontrado');
+eq('sem resultado, lista vazia', (await filtrarUf('zzz')).visiveis, []);
+await filtrarUf('bahia');
+await page.keyboard.press('ArrowDown');
+eq('seta desce do campo para a lista',
+   await page.evaluate(() => document.activeElement.dataset.uf), 'BA');
+await filtrarUf('');
+eq('o campo de filtro nao rouba o foco na abertura', await page.evaluate(() => {
+  document.getElementById('uf-dialog').close();
+  document.getElementById('uf-trigger').click();
+  return document.activeElement.dataset.uf;
+}), 'SP');
+await sleep(300);
 await page.keyboard.press('Escape');
-await sleep(200);
+await esperarFolhaFechar();
 eq('Esc fecha', await page.$eval('#uf-dialog', e => e.open), false);
 eq('foco volta para o gatilho', await page.evaluate(() => document.activeElement.id), 'uf-trigger');
 eq('Esc nao troca de estado', await siglaNoCabecalho(), 'SP');
@@ -632,8 +938,232 @@ eq('dialogo fechou apos escolher', await page.$eval('#uf-dialog', e => e.open), 
 eq('escolha revalida o cargo estadual', (await read('g')).name, 'OSMAR EXEMPLO');
 await page.click('#uf-trigger'); await sleep(150);
 eq('marcacao acompanha a escolha', await page.evaluate(() => document.querySelector('.uf-opcao.is-atual').dataset.uf), 'MG');
-await page.click('#uf-close'); await sleep(180);
+await page.click('#uf-close'); await esperarFolhaFechar();
 eq('botao fechar funciona', await page.$eval('#uf-dialog', e => e.open), false);
+/* clique fora do conteúdo fecha */
+await page.click('#uf-trigger'); await sleep(200);
+await page.evaluate(() => {
+  const d = document.getElementById('uf-dialog');
+  const r = d.getBoundingClientRect();
+  d.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 5, clientY: Math.max(2, r.top - 20) }));
+});
+await esperarFolhaFechar();
+eq('clique fora fecha o seletor de estado', await page.$eval('#uf-dialog', e => e.open), false);
+
+/* --------------------------------------------- busca de candidato por nome */
+/* a folha da busca puxa de baixo, igual à do estado */
+console.log('\n== busca por nome: aproximada, sem virar vitrine (§46)');
+await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+await page.goto(BASE + '?uf=sp', { waitUntil: 'networkidle0' });
+await sleep(300);
+
+const buscar = async texto => {
+  await page.evaluate(() => { document.getElementById('busca-input').value = ''; });
+  if (texto) await page.type('#busca-input', texto, { delay: 5 });
+  else await page.evaluate(() => document.getElementById('busca-input').dispatchEvent(new Event('input')));
+  await sleep(200);
+  return page.evaluate(() => ({
+    contagem: document.getElementById('busca-contagem').textContent,
+    n: document.querySelectorAll('.busca-opcao').length,
+    linhas: [...document.querySelectorAll('.busca-opcao')].map(o => ({
+      nome: o.querySelector('.busca-nome').textContent,
+      partido: o.querySelector('.busca-partido').textContent,
+      cargo: o.querySelector('.busca-cargo').textContent,
+      numero: o.querySelector('.busca-numero').textContent,
+    })),
+  }));
+};
+
+eq('dialogo de busca fechado no inicio', await page.$eval('#busca-dialog', e => e.open), false);
+eq('aria-expanded false', await page.$eval('#busca-trigger', e => e.getAttribute('aria-expanded')), 'false');
+await page.click('#busca-trigger');
+await sleep(250);
+eq('dialogo abriu', await page.$eval('#busca-dialog', e => e.open), true);
+eq('foco vai para o campo', await page.evaluate(() => document.activeElement.id), 'busca-input');
+
+/* abre com a lista completa, em ordem alfabética (§46: sem curadoria) */
+const tudo = await buscar('');
+const totalNaBase = await page.evaluate(async () => {
+  const [sp, br] = await Promise.all([
+    fetch('data/uf/SP.json').then(r => r.json()),
+    fetch('data/br.json').then(r => r.json()),
+  ]);
+  const conta = b => Object.values(b.cargos).reduce((n, o) => n +
+    Object.values(o).filter(c => c.sit !== 'X').length, 0);
+  return conta(sp) + conta(br);
+});
+ok('primeira pagina tem 50 linhas', tudo.n === 50, '(' + tudo.n + ')');
+eq('sem texto de contagem quando ha resultados', tudo.contagem, '');
+
+/* ordem alfabética, número como segundo critério */
+const nomes = tudo.linhas.map(l => l.nome);
+eq('ordem alfabetica', nomes, [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR')));
+const umaLetra = await buscar('m');
+eq('uma letra nao filtra (mostra tudo)', umaLetra.n, tudo.n);
+
+/* scroll infinito: rolar até o fim acrescenta a próxima página */
+const antes = await page.evaluate(() => document.querySelectorAll('.busca-opcao').length);
+await page.evaluate(() => {
+  const l = document.querySelector('.busca-lista');
+  l.scrollTop = l.scrollHeight;
+});
+await sleep(400);
+const depois = await page.evaluate(() => document.querySelectorAll('.busca-opcao').length);
+ok('scroll infinito acrescenta 50', depois > antes && depois <= antes + 50,
+   '(' + antes + ' -> ' + depois + ')');
+for (let i = 0; i < 6; i++) {
+  await page.evaluate(() => {
+    const l = document.querySelector('.busca-lista');
+    l.scrollTop = l.scrollHeight;
+  });
+  await sleep(250);
+}
+const fim = await page.evaluate(() => ({
+  linhas: document.querySelectorAll('.busca-opcao').length,
+  sentinela: document.querySelectorAll('.busca-fim').length,
+}));
+eq('rolando até o fim, carrega todos', fim.linhas, totalNaBase);
+eq('sentinela sai quando acaba', fim.sentinela, 0);
+
+const folhaBusca = await page.evaluate(() => {
+  const r = document.getElementById('busca-dialog').getBoundingClientRect();
+  return { x: Math.round(r.x), largura: Math.round(r.width), altura: Math.round(r.height),
+           base: Math.round(innerHeight - r.bottom), viewport: innerWidth, tela: innerHeight };
+});
+eq('folha da busca ocupa a largura da tela', [folhaBusca.x, folhaBusca.largura],
+   [0, folhaBusca.viewport]);
+eq('folha da busca encostada na base', folhaBusca.base, 0);
+ok('folha da busca com 80% da tela', Math.abs(folhaBusca.altura - folhaBusca.tela * 0.8) <= 2,
+   '(' + folhaBusca.altura + ' de ' + folhaBusca.tela + 'px)');
+
+/* clique fora do conteúdo fecha a folha de busca também */
+await page.evaluate(() => {
+  const d = document.getElementById('busca-dialog');
+  const r = d.getBoundingClientRect();
+  d.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 5, clientY: Math.max(2, r.top - 20) }));
+});
+await esperarFolhaFechar();
+eq('clique fora fecha a busca', await page.$eval('#busca-dialog', e => e.open), false);
+await page.click('#busca-trigger'); await sleep(250);
+eq('reabriu para seguir', await page.$eval('#busca-dialog', e => e.open), true);
+
+const maya = await buscar('maya');
+eq('acha por nome', maya.linhas[0],
+   { nome: 'MAYA EXEMPLO', partido: 'FUT', cargo: 'Deputado federal', numero: '1313' });
+eq('acha por sobrenome no meio', (await buscar('marlene')).linhas[0].nome, 'VETERINARIA MARLENE DEMONSTRA');
+eq('tolera erro de digitacao', (await buscar('marlerne')).linhas[0].nome, 'VETERINARIA MARLENE DEMONSTRA');
+eq('conectivo nao e exigido', (await buscar('maria exemplo demo')).linhas[0].nome,
+   'MARIA DE EXEMPLO SOBRENOME DEMO');
+eq('termo curto nao aceita erro (sem ruido)', (await buscar('xyz')).n, 0);
+eq('sem resultado avisa a UF', (await buscar('zzzzzzz')).contagem, 'nenhum candidato encontrado em SP');
+eq('filtro mantem a ordem alfabetica', await (async () => {
+  const r = await buscar('demo');
+  return r.linhas.map(l => l.nome).every((n, i, a) =>
+    i === 0 || a[i - 1].localeCompare(n, 'pt-BR') <= 0);
+})(), true);
+
+/* §13: candidatura inapta não aparece nem na busca */
+eq('candidatura inapta fica fora da busca', (await buscar('inapto')).n, 0);
+
+/* presidente vem da base nacional */
+eq('busca cobre a base nacional', (await buscar('pres demo')).linhas[0],
+   { nome: 'PRES DEMO B', partido: 'ARC', cargo: 'Presidente', numero: '31' });
+eq('senado aparece sem a vaga', (await buscar('rute')).linhas[0].cargo, 'Senador');
+
+/* escolher um resultado preenche o card certo */
+await buscar('agda');
+await page.click('.busca-opcao');
+await esperarFolhaFechar();
+eq('dialogo fechou ao escolher', await page.$eval('#busca-dialog', e => e.open), false);
+eq('preencheu o governador', (await read('g')).digits, '13');
+eq('resolveu o candidato', (await read('g')).name, 'AGDA EXEMPLO');
+eq('url atualizada', await page.evaluate(() => location.search), '?uf=sp&g=13');
+
+/* §21: qual das duas vagas de senador a busca sobrescreve */
+const escolherPelaBusca = async texto => {
+  await page.click('#busca-trigger'); await sleep(200);
+  await buscar(texto);
+  await page.click('.busca-opcao'); await esperarFolhaFechar();
+};
+const senadores = async () => [(await read('s1')).digits, (await read('s2')).digits];
+
+await escolherPelaBusca('rute');
+eq('vagas vazias: preenche a primeira', await senadores(), ['131', '___']);
+await escolherPelaBusca('ivo demo');
+eq('uma vaga livre: preenche a livre', await senadores(), ['131', '132']);
+
+/* duas válidas: sobrescreve a mexida há mais tempo, alternando */
+await escolherPelaBusca('leda');
+eq('duas válidas: atropela a mais antiga (s1)', await senadores(), ['313', '132']);
+await escolherPelaBusca('helio');
+eq('próxima busca atropela a outra (s2)', await senadores(), ['313', '450']);
+await escolherPelaBusca('rute');
+eq('volta a alternar', await senadores(), ['131', '450']);
+
+/* não duplica: escolher quem já está numa vaga não ocupa a outra */
+await escolherPelaBusca('helio');
+eq('candidato já presente fica onde está', await senadores(), ['131', '450']);
+
+/* vaga sem candidato válido perde para a válida, mesmo se mexida agora */
+await page.goto(BASE + '?uf=sp&s1=131&s2=999', { waitUntil: 'networkidle0' }); await sleep(250);
+await page.click('.card[data-cargo="s2"] .digit[data-index="2"]');
+await page.keyboard.press('8');                       // mexe na s2 agora: 998, inválido
+await sleep(150);
+eq('s2 inválida e recém-mexida', await senadores(), ['131', '998']);
+await escolherPelaBusca('leda');
+eq('atropela a inválida, não a válida', await senadores(), ['131', '313']);
+
+/* vaga vazia ganha de tudo, mesmo recém-esvaziada */
+await page.goto(BASE + '?uf=sp&s1=131&s2=132', { waitUntil: 'networkidle0' }); await sleep(250);
+await page.click('.card[data-cargo="s1"] .digit[data-index="2"]');
+for (const _ of [1, 2, 3]) await page.keyboard.press('Backspace');
+await sleep(150);
+eq('s1 esvaziada à mão', await senadores(), ['___', '132']);
+await escolherPelaBusca('leda');
+eq('vaga vazia ganha, mesmo sendo a mexida mais recente', await senadores(), ['313', '132']);
+
+/* editar à mão conta como mexer: a busca passa a atropelar a outra vaga */
+await page.goto(BASE + '?uf=sp&s1=131&s2=132', { waitUntil: 'networkidle0' }); await sleep(250);
+await page.click('.card[data-cargo="s1"] .digit[data-index="2"]');
+await page.keyboard.press('2');                       // s1 = 132? não: 131 -> 132 é válido
+await sleep(150);
+await escolherPelaBusca('leda');
+eq('edição manual move a vez para a outra vaga', (await senadores())[1], '313');
+
+/* teclado */
+await page.click('#busca-trigger'); await sleep(200);
+await buscar('demo');
+ok('varios resultados para navegar', (await page.evaluate(() => document.querySelectorAll('.busca-opcao').length)) > 2);
+await page.keyboard.press('ArrowDown');
+eq('ArrowDown foca o primeiro resultado', await page.evaluate(() =>
+   document.activeElement.classList.contains('busca-opcao')), true);
+await page.keyboard.press('ArrowDown');
+eq('ArrowDown percorre', await page.evaluate(() => {
+  const o = [...document.querySelectorAll('.busca-opcao')];
+  return o.indexOf(document.activeElement);
+}), 1);
+await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp');
+eq('ArrowUp volta ao campo', await page.evaluate(() => document.activeElement.id), 'busca-input');
+await page.keyboard.press('Escape'); await esperarFolhaFechar();
+eq('Esc fecha', await page.$eval('#busca-dialog', e => e.open), false);
+eq('foco volta para o gatilho', await page.evaluate(() => document.activeElement.id), 'busca-trigger');
+
+/* Enter escolhe o primeiro */
+await page.goto(BASE + '?uf=sp', { waitUntil: 'networkidle0' }); await sleep(250);
+await page.click('#busca-trigger'); await sleep(200);
+await buscar('maya');
+await page.keyboard.press('Enter'); await esperarFolhaFechar();
+eq('Enter escolhe o primeiro resultado', (await read('df')).digits, '1313');
+
+/* troca de UF invalida o indice */
+await page.click('#busca-trigger'); await sleep(200);
+eq('candidato de SP aparece em SP', (await buscar('maya')).n, 1);
+await page.keyboard.press('Escape'); await esperarFolhaFechar();
+await escolherUf('MG');
+await page.click('#busca-trigger'); await sleep(250);
+eq('indice acompanha a troca de UF', (await buscar('maya ribeiro')).linhas[0].nome, 'MAYA RIBEIRO DEMO');
+eq('candidato exclusivo de SP nao aparece em MG', (await buscar('helio teste')).n, 0);
+await page.keyboard.press('Escape'); await esperarFolhaFechar();
 
 /* ----------------------------------------------------------- §5 share */
 console.log('\n== §5 compartilhamento (fallback clipboard)');
@@ -651,6 +1181,34 @@ await sleep(120);
 eq('copiou a URL atual', await page.evaluate(() => window.__copiado), await page.evaluate(() => location.href));
 eq('feedback exibido', await page.$eval('#toast', e => e.hidden ? null : e.textContent), 'Link copiado ✓');
 eq('aria-label no botao', await page.$eval('#share', e => e.getAttribute('aria-label')), 'Compartilhar minha cola eleitoral');
+eq('rotulo visivel no botao', await page.$eval('.share-rotulo', e => e.textContent), 'Compartilhar');
+ok('rotulo visivel contido no acessivel (WCAG 2.5.3)', await page.$eval('#share',
+   e => e.getAttribute('aria-label').includes(e.querySelector('.share-rotulo').textContent)));
+eq('botao de estado diz o que faz', await page.$eval('#uf-trigger .rotulo-botao', e => e.textContent),
+   'trocar estado');
+eq('botao de busca diz o que faz', await page.$eval('#busca-trigger .rotulo-botao', e => e.textContent),
+   'buscar por nome');
+eq('os dois botoes do rodape seguem o mesmo padrao icone + rotulo', await page.evaluate(() => {
+  const medir = sel => {
+    const b = document.querySelector(sel);
+    const svg = b.querySelector('svg');
+    const rot = b.querySelector('.rotulo-botao');
+    return { temIcone: Boolean(svg),
+             icone: svg ? Math.round(svg.getBoundingClientRect().width) : 0,
+             iconeAntesDoRotulo: svg && rot
+               ? svg.getBoundingClientRect().right <= rot.getBoundingClientRect().left + 1 : false };
+  };
+  const uf = medir('#uf-trigger'), busca = medir('#busca-trigger');
+  return { ambosComIcone: uf.temIcone && busca.temIcone,
+           iconesDoMesmoTamanho: uf.icone === busca.icone,
+           ordemIgual: uf.iconeAntesDoRotulo && busca.iconeAntesDoRotulo };
+}), { ambosComIcone: true, iconesDoMesmoTamanho: true, ordemIgual: true });
+ok('rotulos do rodape contidos nos nomes acessiveis (WCAG 2.5.3)', await page.evaluate(() =>
+  ['#uf-trigger', '#busca-trigger'].every(sel => {
+    const b = document.querySelector(sel);
+    const visivel = b.querySelector('.rotulo-botao').textContent.toLowerCase();
+    return b.getAttribute('aria-label').toLowerCase().includes(visivel);
+  })));
 
 /* -------------------------------------------------------- §34/§38 extras */
 console.log('\n== §34 acessibilidade / §38 segurança');
