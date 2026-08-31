@@ -480,14 +480,14 @@ body {
 
 /* no desktop o diálogo vira um cartão centrado */
 @media (min-width: 700px) {
+  /* A ficha continua sendo puxada do rodapé, também no desktop. Centrá-la na
+     tela quebrava a metáfora: as abas ficavam soltas no meio, desconectadas dos
+     botões de onde saíram. Só a largura acompanha a coluna dos cards e a altura
+     ganha um teto absoluto, senão 80dvh viraria um cartão gigante. */
   .uf-dialog {
-    inset: 0;
-    margin: auto;
-    /* no desktop, 80dvh viraria um cartão gigante: mantém o teto absoluto */
+    width: min(620px, 100vw - 32px);
     height: min(80dvh, 620px);
     max-height: min(80dvh, 620px);
-    border-radius: 14px;
-    box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .6);
   }
 }
 
@@ -910,7 +910,7 @@ body.kb-open .tagline { display: none; }
     place-content: stretch center;
     grid-template-columns: min(620px, 100%);
   }
-  .header, .cards { width: min(620px, 100vw - 32px); margin-inline: auto; }
+  .header, .cards, .rodape { width: min(620px, 100vw - 32px); margin-inline: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

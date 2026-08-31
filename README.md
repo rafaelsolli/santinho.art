@@ -2147,6 +2147,23 @@ Duas decisões dentro disso:
   primeira tentativa foi uma linha dura de 2px na base da aba inativa; ficou
   ruim, a sombra interna resolve melhor e vale nos dois estados.
 
+### No desktop também sai do rodapé
+
+Havia um resto de desenho antigo: acima de 700px o diálogo era **centrado na
+tela**, o que fazia sentido para um modal comum, mas não para uma ficha puxada
+por uma aba — as abas ficavam soltas no meio, desconectadas dos botões de onde
+saíram (visível no Brave desktop). Agora a ficha é bottom-sheet em qualquer
+largura; no desktop só a largura acompanha a coluna dos cards (620px, centrada) e
+a altura mantém o teto absoluto de 620px, senão 80dvh viraria um cartão gigante.
+
+A suíte verifica em 1280×800 e 1680×1050: colada na base, centrada em x, no
+máximo 80% da tela, aba alinhada ao pixel com o botão do rodapé e bordas de cima
+arredondadas.
+
+Um detalhe que me atrasou: havia **dois blocos `@media (min-width: 700px)`
+separados** no arquivo, e minha primeira substituição assumiu que eram contíguos
+— não casou, e a medição mostrou o diálogo ainda com 440px e a 90px da base.
+
 ### Animação de puxar e devolver
 
 Abrir anima `translateY(calc(100% - var(--btn))) → 0`. Fechar é o lado difícil:
@@ -2357,15 +2374,29 @@ e as meta tags. Os comentários do código seguem com travessão, que é prosa e
 texto de tela.
 
 ```text
-minha cola eleitoral 2026 - São Paulo (SP)
+Minha cola eleitoral 2026 - SP
 
-DEP. FEDERAL · 1000 · CELSO RUSSOMANNO (REPUBLICANOS)
-DEP. ESTADUAL · 50 · voto de legenda - PSOL
-1º SENADOR · 111 · GUILHERME DERRITE (PP)
-2º SENADOR · 999 · número não encontrado
-GOVERNADOR · 13 · FERNANDO HADDAD (PT)
-PRESIDENTE · 13 · LULA (PT)
+Dep. federal · 1000
+Dep. estadual · 50
+1º senador · 111
+2º senador · 999
+Governador · 13
+Presidente · 13
+
+https://santinho.art/?uf=sp&df=1000&de=50&s1=111&s2=999&g=13&p=13
 ```
+
+**Só cargo e número.** As duas primeiras versões traziam nome, partido e o
+motivo de cada estado ("voto de legenda", "número não encontrado"), com tudo em
+caixa alta e sem linha em branco — ficava pesada de ler. Nome, partido e foto
+vão na imagem, que segue junto no compartilhamento; repetir em texto era
+redundante. O cargo ficou em caixa normal, com uma linha em branco entre os
+votos, e o título traz só a sigla da UF.
+
+Linha em branco em dois lugares apenas: entre o título e os votos, e antes do
+link. Com só cargo e número por linha, branco entre cada voto deixava a cola
+longa sem ganhar clareza. O link entra no texto apenas no caminho do clipboard —
+no `navigator.share` ele vai no campo `url`.
 
 Cargo vazio não entra. Legenda e número inexistente são ditos com palavras, em
 vez de sumirem. Não há alinhamento por espaços: a fonte de aplicativo de mensagem
@@ -2420,7 +2451,7 @@ um arquivo `CNAME` com `santinho.art` e aponte o DNS.
 
 ## 59.15. Verificação
 
-`tests/interacao.mjs` — **628 asserções passando**, cobrindo os §48/§50 e mais.
+`tests/interacao.mjs` — **644 asserções passando**, cobrindo os §48/§50 e mais.
 A suíte sobe o servidor estático, acha o Chrome e dirige um navegador de verdade.
 Ela serve `tests/fixtures/data` (base fictícia fixa), **não** `data/`: atualizar
 a base real do TSE não pode quebrar teste.
@@ -2443,8 +2474,10 @@ O que ela verifica:
   sobrevivendo ao recarregamento, troca de UF preservando números;
 - falha de dados: interface segue utilizável, números preservados, aviso
   discreto, compartilhamento funcionando;
-- compartilhamento: conteúdo da cola em texto (válido, legenda, número
-  inexistente, cargo vazio fora), imagem indo como JPEG de tamanho plausível,
+- compartilhamento: conteúdo da cola em texto (título, cargo e número, linha em
+  branco só entre título e votos, cargo vazio fora, sem nome nem partido),
+  linha em branco antes do link no clipboard, imagem indo como JPEG de tamanho
+  plausível,
   link junto, cancelamento não caindo para o clipboard, desktop copiando e
   baixando, e o cache da imagem invalidando ao editar e voltando sozinho;
 - carregamento lento: aviso discreto, interface não bloqueada, digitação

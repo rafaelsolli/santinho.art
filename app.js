@@ -1327,30 +1327,20 @@ function toast(msg) {
 
 /* ------------------------------------------------------- cola em texto (§5) */
 
-/* Texto para colar em conversa: cargo, número, nome e partido de cada voto.
- * Sem alinhamento por espaços — a fonte de aplicativo de mensagem é
- * proporcional e o alinhamento não sobreviveria; separador dá conta. */
+/* Texto para colar em conversa: só cargo e número. Nome, partido e foto vão na
+ * imagem, que segue junto no compartilhamento — repetir tudo em texto deixava a
+ * cola pesada de ler. Linha em branco só entre o título e os votos (e, no
+ * caminho do clipboard, antes do link). */
 function textoDaCola() {
   const linhas = [];
   for (const cargo of CARGOS) {
     const digits = state.votes[cargo.key];
     if (digits.every(d => d === null)) continue;
-
-    const numero = codificarVoto(digits);
-    const r = resolveCandidate(cargo);
-    let quem = '';
-    if (r.estado === 'valido') quem = r.nome + ' (' + r.party + ')';
-    else if (r.estado === 'legenda') quem = 'voto de legenda - ' + r.party;
-    else if (r.estado === 'invalido') quem = 'número não encontrado';
-
-    linhas.push(nomeCurtoDoCargo(cargo).toUpperCase() + ' · ' + numero +
-                (quem ? ' · ' + quem : ''));
+    linhas.push(nomeCurtoDoCargo(cargo) + ' · ' + codificarVoto(digits));
   }
   if (!linhas.length) return null;
 
-  const nomeUf = NOME_DA_UF.get(state.uf) || state.uf;
-  return 'minha cola eleitoral 2026 - ' + nomeUf + ' (' + state.uf + ')\n\n' +
-         linhas.join('\n');
+  return 'Minha cola eleitoral 2026 - ' + state.uf + '\n\n' + linhas.join('\n');
 }
 
 /* -------------------------------------------------------- imagem do santinho */

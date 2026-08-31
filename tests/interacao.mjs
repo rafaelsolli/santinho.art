@@ -818,6 +818,41 @@ eq('fecha depois de descer', await page.$eval('#uf-dialog', e => e.open), false)
 eq('sem classe de fechamento pendurada',
    await page.$eval('#uf-dialog', e => e.classList.contains('is-fechando')), false);
 
+/* no desktop a ficha continua saindo do rodapé, não centrada na tela */
+for (const [w, h] of [[1280, 800], [1680, 1050]]) {
+  await page.setViewport({ width: w, height: h, deviceScaleFactor: 1 });
+  await page.goto(BASE + '?uf=sp&g=13', { waitUntil: 'networkidle0' });
+  await sleep(300);
+  await page.click('#uf-trigger');
+  await sleep(500);
+  const noDesktop = await page.evaluate(() => {
+    const d = document.getElementById('uf-dialog').getBoundingClientRect();
+    const rod = document.getElementById('uf-trigger').getBoundingClientRect();
+    const aba = document.querySelector('#uf-dialog [data-aba="uf"]').getBoundingClientRect();
+    const corpo = document.querySelector('#uf-dialog .folha-corpo');
+    return {
+      base: Math.round(innerHeight - d.bottom),
+      centrada: Math.abs((d.left + d.right) / 2 - innerWidth / 2) < 1.5,
+      alturaPct: Math.round(d.height / innerHeight * 100),
+      abaAlinhada: Math.abs(aba.x - rod.x) < 1.5 && Math.abs(aba.width - rod.width) < 1.5,
+      raioTopo: getComputedStyle(corpo).borderTopLeftRadius,
+    };
+  });
+  const tagD = w + 'x' + h;
+  eq('desktop: ficha colada na base ' + tagD, noDesktop.base, 0);
+  ok('desktop: ficha centrada em x', noDesktop.centrada, tagD);
+  ok('desktop: nao passa de 80% da tela', noDesktop.alturaPct <= 80, tagD + ' (' + noDesktop.alturaPct + '%)');
+  ok('desktop: aba alinhada com o botao do rodape', noDesktop.abaAlinhada, tagD);
+  eq('desktop: bordas de cima arredondadas ' + tagD, noDesktop.raioTopo, '18px');
+  await page.keyboard.press('Escape');
+  await esperarFolhaFechar();
+}
+await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+await page.goto(BASE + '?uf=sp&g=13', { waitUntil: 'networkidle0' });
+await sleep(300);
+await page.click('#uf-trigger');
+await sleep(400);
+
 /* quem pede menos movimento fecha na hora */
 await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
 await page.click('#uf-trigger'); await sleep(200);
@@ -1216,23 +1251,30 @@ ok('a imagem tem tamanho plausivel',
    comArquivo.share.arquivos[0].bytes > 40000 && comArquivo.share.arquivos[0].bytes < 900000,
    '(' + Math.round(comArquivo.share.arquivos[0].bytes / 1024) + ' KB)');
 eq('o link vai junto', comArquivo.share.url, await page.evaluate(() => location.href));
-ok('o texto lista os votos', comArquivo.share.text.includes('MAYA EXEMPLO'),
+ok('o texto lista os votos', comArquivo.share.text.includes('Dep. federal · 1313'),
    JSON.stringify(comArquivo.share.text.slice(0, 60)));
 eq('nao copia nem baixa quando compartilhou',
    [comArquivo.copiado, comArquivo.baixado], [null, null]);
 
-/* conteúdo da cola em texto */
+/* conteúdo da cola em texto: só cargo e número */
 const texto = comArquivo.share.text;
 const linhas = texto.split('\n').filter(Boolean);
-eq('cabecalho da cola', linhas[0], 'minha cola eleitoral 2026 - São Paulo (SP)');
+eq('cabecalho da cola', linhas[0], 'Minha cola eleitoral 2026 - SP');
+eq('titulo com maiuscula', texto.startsWith('Minha cola'), true);
 eq('uma linha por cargo preenchido', linhas.length - 1, 5);
-ok('candidato valido traz nome e partido',
-   linhas.some(l => l === 'DEP. FEDERAL · 1313 · MAYA EXEMPLO (FUT)'), JSON.stringify(linhas));
-ok('legenda aparece como legenda',
-   linhas.some(l => l === 'DEP. ESTADUAL · 13 · voto de legenda - FUT'), JSON.stringify(linhas));
-ok('numero inexistente e dito',
-   linhas.some(l => l === '2º SENADOR · 999 · número não encontrado'), JSON.stringify(linhas));
-ok('cargo vazio nao entra na cola', !texto.includes('PRESIDENTE'));
+ok('cargo e numero, em caixa normal',
+   linhas.includes('Dep. federal · 1313'), JSON.stringify(linhas));
+ok('legenda entra so com o numero do partido',
+   linhas.includes('Dep. estadual · 13'), JSON.stringify(linhas));
+ok('numero inexistente entra igual',
+   linhas.includes('2º senador · 999'), JSON.stringify(linhas));
+ok('cargo vazio nao entra na cola', !texto.includes('Presidente'));
+ok('votos em linhas seguidas, sem branco entre eles',
+   texto.includes('· 1313\nDep. estadual'), JSON.stringify(texto.slice(0, 120)));
+ok('linha em branco entre titulo e votos', texto.includes('- SP\n\nDep. federal'),
+   JSON.stringify(texto.slice(0, 80)));
+ok('sem nome de candidato no texto', !texto.includes('MAYA'), JSON.stringify(texto));
+ok('sem partido no texto', !texto.includes('(FUT)'), JSON.stringify(texto));
 
 /* 2. plataforma sem suporte a arquivo: texto + link, sem imagem */
 await espionar({ comShare: true, comArquivos: false });
@@ -1241,7 +1283,7 @@ await sleep(300);
 const semArquivo = await resultado();
 eq('sem suporte a arquivo, compartilha so texto e link',
    semArquivo.share.arquivos.length, 0);
-ok('o texto continua indo', semArquivo.share.text.includes('MAYA EXEMPLO'));
+ok('o texto continua indo', semArquivo.share.text.includes('Dep. federal · 1313'));
 
 /* 3. cancelar não deve cair para o clipboard */
 await espionar({ comShare: true, comArquivos: true, cancela: true });
@@ -1254,8 +1296,9 @@ await espionar({ comShare: false });
 await page.click('#share');
 await sleep(400);
 const semShare = await resultado();
-ok('copia a cola inteira', semShare.copiado && semShare.copiado.includes('MAYA EXEMPLO'));
+ok('copia a cola inteira', semShare.copiado && semShare.copiado.includes('Dep. federal · 1313'));
 ok('copia o link no fim', semShare.copiado.trim().endsWith(await page.evaluate(() => location.href)));
+ok('linha em branco antes do link', semShare.copiado.includes('\n\n' + await page.evaluate(() => location.href)));
 eq('baixa a imagem', semShare.baixado && semShare.baixado.nome, 'santinho-sp.jpg');
 eq('feedback conta as duas coisas',
    await page.$eval('#toast', e => e.hidden ? null : e.textContent),
@@ -1271,7 +1314,7 @@ await sleep(300);
 const logoApos = await resultado();
 eq('logo apos editar, vai sem imagem (cache invalidado)',
    logoApos.share.arquivos.length, 0);
-ok('mas o texto ja tem o voto novo', logoApos.share.text.includes('PRESIDENTE'));
+ok('mas o texto ja tem o voto novo', logoApos.share.text.includes('Presidente'));
 await sleep(1600);
 await espionar({ comShare: true, comArquivos: true });
 await page.click('#share');
