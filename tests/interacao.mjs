@@ -886,6 +886,19 @@ await sleep(200);
 eq('dialogo abriu', await page.$eval('#uf-dialog', e => e.open), true);
 eq('aria-expanded true', await page.$eval('#uf-trigger', e => e.getAttribute('aria-expanded')), 'true');
 eq('27 opcoes', await page.evaluate(() => document.querySelectorAll('.uf-opcao').length), 27);
+eq('chips de regiao começam desmarcados', await page.evaluate(() =>
+  [...document.querySelectorAll('#uf-filtros [data-regiao]')].map(c => c.getAttribute('aria-pressed'))),
+['false', 'false', 'false', 'false', 'false']);
+await page.click('#uf-filtros [data-regiao="SE"]');
+eq('chip de regiao filtra os estados', await page.evaluate(() =>
+  [...document.querySelectorAll('#uf-list .uf-opcao')]
+    .filter(b => !b.parentElement.hidden).map(b => b.dataset.uf)), ['ES', 'MG', 'RJ', 'SP']);
+eq('limpar regioes fica visivel com selecao', await page.$eval(
+  '#uf-filtros [data-limpar-filtros]', e => e.hidden), false);
+await page.click('#uf-filtros [data-limpar-filtros]');
+eq('limpar regioes restaura todos os estados', await page.evaluate(() =>
+  [...document.querySelectorAll('#uf-list .uf-opcao')].filter(b => !b.parentElement.hidden).length), 27);
+await page.evaluate(() => document.querySelector('.uf-opcao.is-atual').focus());
 const opcao = await page.evaluate(() => {
   const b = document.querySelector('.uf-opcao[data-uf="MG"]');
   return { flag: b.querySelector('.uf-opcao-flag').getAttribute('src'),
@@ -1015,6 +1028,21 @@ await page.click('#busca-trigger');
 await sleep(250);
 eq('dialogo abriu', await page.$eval('#busca-dialog', e => e.open), true);
 eq('foco vai para o campo', await page.evaluate(() => document.activeElement.id), 'busca-input');
+eq('chips de cargo começam desmarcados', await page.evaluate(() =>
+  [...document.querySelectorAll('#busca-filtros [data-cargo]')].map(c => c.getAttribute('aria-pressed'))),
+['false', 'false', 'false', 'false', 'false']);
+eq('chips de partido em ordem alfabetica', await page.evaluate(() => {
+  const partidos = [...document.querySelectorAll('#busca-filtros-partidos [data-partido]')]
+    .map(c => c.dataset.partido);
+  return partidos.every((partido, i) =>
+    i === 0 || partidos[i - 1].localeCompare(partido, 'pt-BR') <= 0);
+}), true);
+await page.click('#busca-filtros [data-cargo="g"]');
+eq('chip de cargo filtra candidatos', await page.evaluate(() =>
+  [...document.querySelectorAll('.busca-cargo')].every(c => c.textContent === 'Governador')), true);
+eq('limpar cargos fica visivel com selecao', await page.$eval(
+  '#busca-filtros [data-limpar-filtros]', e => e.hidden), false);
+await page.click('#busca-filtros [data-limpar-filtros]');
 
 /* abre com a lista completa, em ordem alfabética (§46: sem curadoria) */
 const tudo = await buscar('');

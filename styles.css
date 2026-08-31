@@ -282,6 +282,7 @@ body {
   padding: 6px 0 max(8px, env(safe-area-inset-bottom));
   list-style: none;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   overscroll-behavior: contain;       /* não arrasta a página atrás */
   -webkit-overflow-scrolling: touch;
 }
@@ -381,6 +382,63 @@ body {
 }
 .busca-input::placeholder { color: var(--ink-soft); font-weight: 500; }
 
+.filtros-chips {
+  display: flex;
+  gap: 7px;
+  padding: 10px 16px 7px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  flex: none;
+  cursor: grab;
+}
+.filtros-chips::-webkit-scrollbar { display: none; }
+.filtros-chips.is-arrastando { cursor: grabbing; user-select: none; }
+.chip-filtro {
+  flex: none;
+  min-height: 30px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--neutral) 55%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.chip-filtro.is-ativo {
+  color: var(--card);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.chip-partido { color: var(--c); border-color: var(--c); }
+.chip-partido.is-ativo {
+  color: var(--c-txt);
+  background: var(--c);
+  border-color: var(--c);
+}
+.chip-filtro:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.limpar-filtros {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.limpar-filtros svg { width: 16px; height: 16px; }
+.limpar-filtros:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (hover: hover) {
+  .limpar-filtros:hover { color: var(--ink); background: var(--paper-2); }
+}
+
 .busca-contagem {
   margin: 0;
   padding: 9px 16px 3px;
@@ -399,6 +457,7 @@ body {
   padding: 4px 0 max(10px, env(safe-area-inset-bottom));
   list-style: none;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   flex: 1 1 auto;

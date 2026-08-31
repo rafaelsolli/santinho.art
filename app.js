@@ -30,6 +30,14 @@ const UFS = [
 ];
 const NOME_DA_UF = new Map(UFS);
 const UF_PADRAO = 'SP';
+const REGIOES = [
+  ['N', 'Norte', ['AC', 'AP', 'AM', 'PA', 'RO', 'RR', 'TO']],
+  ['NE', 'Nordeste', ['AL', 'BA', 'CE', 'MA', 'PB', 'PE', 'PI', 'RN', 'SE']],
+  ['CO', 'Centro-Oeste', ['DF', 'GO', 'MS', 'MT']],
+  ['SE', 'Sudeste', ['ES', 'MG', 'RJ', 'SP']],
+  ['S', 'Sul', ['PR', 'RS', 'SC']],
+];
+const REGIAO_DA_UF = new Map(REGIOES.flatMap(([key, , ufs]) => ufs.map(uf => [uf, key])));
 
 /* bandeiras baixadas por scripts/update-flags.mjs */
 const bandeiraDaUf = uf => 'assets/flags/' + uf + '.png';
@@ -114,7 +122,10 @@ const els = {
   ufList:    document.getElementById('uf-list'),
   ufClose:   document.getElementById('uf-close'),
   ufBusca:    document.getElementById('uf-busca'),
+  ufFiltros:  document.getElementById('uf-filtros'),
   ufContagem: document.getElementById('uf-contagem'),
+  buscaFiltros: document.getElementById('busca-filtros'),
+  buscaFiltrosPartidos: document.getElementById('busca-filtros-partidos'),
   share:     document.getElementById('share'),
   status:    document.getElementById('status'),
   toast:     document.getElementById('toast'),
@@ -359,6 +370,7 @@ function renderGatilhoUf() {
 /* A lista só é construída na primeira abertura: são 27 bandeiras (163 KB) que
  * não têm por que entrar no primeiro carregamento (§35). */
 let listaUfMontada = false;
+const regioesAtivas = new Set();
 
 function montarListaUf() {
   if (listaUfMontada) return;
@@ -393,6 +405,65 @@ function montarListaUf() {
   listaUfMontada = true;
 }
 
+function montarFiltrosDeRegiao() {
+  if (els.ufFiltros.childElementCount) return;
+  for (const [key, nome] of REGIOES) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip-filtro';
+    chip.dataset.regiao = key;
+    chip.textContent = nome;
+    chip.setAttribute('aria-pressed', 'false');
+    els.ufFiltros.appendChild(chip);
+  }
+  els.ufFiltros.appendChild(botaoLimparFiltros());
+  permitirArrastarFiltros(els.ufFiltros);
+}
+
+function botaoLimparFiltros() {
+  const botao = document.createElement('button');
+  botao.type = 'button';
+  botao.className = 'limpar-filtros';
+  botao.dataset.limparFiltros = '';
+  botao.hidden = true;
+  botao.title = 'Limpar filtros';
+  botao.setAttribute('aria-label', 'Limpar filtros');
+  botao.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+  return botao;
+}
+
+function atualizarBotaoLimparFiltros(container, haSelecao) {
+  container.querySelector('[data-limpar-filtros]').hidden = !haSelecao;
+}
+
+function permitirArrastarFiltros(container) {
+  let inicioX = 0;
+  let inicioScroll = 0;
+  let arrastou = false;
+
+  container.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    inicioX = e.clientX;
+    inicioScroll = container.scrollLeft;
+    arrastou = false;
+    container.classList.add('is-pronto-para-arrastar');
+  });
+  container.addEventListener('pointermove', e => {
+    if (!container.classList.contains('is-pronto-para-arrastar')) return;
+    const distancia = e.clientX - inicioX;
+    if (Math.abs(distancia) > 3) arrastou = true;
+    if (!arrastou) return;
+    container.scrollLeft = inicioScroll - distancia;
+    container.classList.add('is-arrastando');
+    e.preventDefault();
+  });
+  container.addEventListener('pointerup', e => {
+    if (!container.classList.contains('is-pronto-para-arrastar')) return;
+    container.classList.remove('is-pronto-para-arrastar');
+    container.classList.remove('is-arrastando');
+  });
+}
+
 /* só as opções visíveis: o filtro esconde as demais */
 function opcoesUf() {
   return [...els.ufList.querySelectorAll('.uf-opcao')]
@@ -408,7 +479,8 @@ function filtrarEstados() {
   for (const botao of els.ufList.querySelectorAll('.uf-opcao')) {
     const uf = botao.dataset.uf;
     const palavras = normalizarNome((NOME_DA_UF.get(uf) || '') + ' ' + uf).split(' ');
-    const combina = termos.every(t => palavras.some(p => p.startsWith(t)));
+    const combina = (!regioesAtivas.size || regioesAtivas.has(REGIAO_DA_UF.get(uf))) &&
+      termos.every(t => palavras.some(p => p.startsWith(t)));
     botao.parentElement.hidden = !combina;
     if (combina) visiveis++;
   }
@@ -496,6 +568,7 @@ function trocarDeFolha(destino) {
 
 function abrirSeletorUf() {
   montarListaUf();
+  montarFiltrosDeRegiao();
   els.ufBusca.value = '';
   filtrarEstados();
   for (const b of opcoesUf()) {
@@ -567,6 +640,28 @@ function ligarSeletorUf() {
     }
   });
   els.ufBusca.addEventListener('input', filtrarEstados);
+  els.ufFiltros.addEventListener('click', e => {
+    if (e.target.closest('[data-limpar-filtros]')) {
+      regioesAtivas.clear();
+      for (const chip of els.ufFiltros.querySelectorAll('[data-regiao]')) {
+        chip.classList.remove('is-ativo');
+        chip.setAttribute('aria-pressed', 'false');
+      }
+      atualizarBotaoLimparFiltros(els.ufFiltros, false);
+      filtrarEstados();
+      return;
+    }
+    const chip = e.target.closest('.chip-filtro[data-regiao]');
+    if (!chip) return;
+    const { regiao } = chip.dataset;
+    if (regioesAtivas.has(regiao)) regioesAtivas.delete(regiao);
+    else regioesAtivas.add(regiao);
+    const ativo = regioesAtivas.has(regiao);
+    chip.classList.toggle('is-ativo', ativo);
+    chip.setAttribute('aria-pressed', String(ativo));
+    atualizarBotaoLimparFiltros(els.ufFiltros, regioesAtivas.size > 0);
+    filtrarEstados();
+  });
   els.ufList.addEventListener('click', e => {
     const opcao = e.target.closest('.uf-opcao');
     if (!opcao) return;
@@ -871,6 +966,8 @@ const MIN_LETRAS = 2;
 const CONECTIVOS = new Set(['DE', 'DA', 'DO', 'DAS', 'DOS', 'E', 'DI', 'DU', 'AO', 'NA', 'NO']);
 const CARGO_POR_BASE = new Map();
 for (const c of CARGOS) if (!CARGO_POR_BASE.has(c.base)) CARGO_POR_BASE.set(c.base, c);
+const cargosAtivos = new Set();
+const partidosAtivos = new Set();
 
 /* na busca o cargo aparece sem a vaga: existe um Senado só, com duas vagas */
 function rotuloDaBase(base) {
@@ -976,9 +1073,14 @@ function buscarCandidatos(consulta) {
   const termos = semConectivos.length ? semConectivos : brutos;
 
   /* sem termo utilizável, a lista inteira — já ordenada */
-  if (!termos.length) return { termos, achados: itens };
+  if (!termos.length) return { termos, achados: itens.filter(item =>
+    (!cargosAtivos.size || cargosAtivos.has(item.base)) &&
+    (!partidosAtivos.size || partidosAtivos.has(item.sigla))) };
 
-  const achados = itens.filter(item => pontuar(termos, item.palavras, item.normal) >= 0);
+  const achados = itens.filter(item =>
+    (!cargosAtivos.size || cargosAtivos.has(item.base)) &&
+    (!partidosAtivos.size || partidosAtivos.has(item.sigla)) &&
+    pontuar(termos, item.palavras, item.normal) >= 0);
   return { termos, achados };
 }
 
@@ -1089,6 +1191,42 @@ let mostradosNaBusca = 0;
 let sentinela = null;
 let observadorDoFim = null;
 
+function montarFiltrosDeCargo() {
+  if (els.buscaFiltros.childElementCount) return;
+  for (const [base, cargo] of CARGO_POR_BASE) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip-filtro';
+    chip.dataset.cargo = base;
+    chip.textContent = rotuloDaBase(base).replace(/^Deputado/, 'Dep.');
+    chip.setAttribute('aria-pressed', 'false');
+    els.buscaFiltros.appendChild(chip);
+  }
+  els.buscaFiltros.appendChild(botaoLimparFiltros());
+  permitirArrastarFiltros(els.buscaFiltros);
+}
+
+function montarFiltrosDePartido() {
+  const partidos = [...new Set(construirIndice().map(item => item.sigla))]
+    .filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  els.buscaFiltrosPartidos.replaceChildren();
+  partidosAtivos.clear();
+  for (const sigla of partidos) {
+    const chip = document.createElement('button');
+    const paleta = paletaDoPartido(sigla);
+    chip.type = 'button';
+    chip.className = 'chip-filtro chip-partido';
+    chip.dataset.partido = sigla;
+    chip.textContent = sigla;
+    chip.setAttribute('aria-pressed', 'false');
+    chip.style.setProperty('--c', paleta.cor);
+    chip.style.setProperty('--c-txt', paleta.texto);
+    els.buscaFiltrosPartidos.appendChild(chip);
+  }
+  els.buscaFiltrosPartidos.appendChild(botaoLimparFiltros());
+  permitirArrastarFiltros(els.buscaFiltrosPartidos);
+}
+
 /* acrescenta a próxima página e mantém a sentinela no fim da lista */
 function mostrarMaisResultados() {
   const proximos = resultadosDaBusca.slice(mostradosNaBusca, mostradosNaBusca + PAGINA_BUSCA);
@@ -1139,6 +1277,8 @@ function renderBusca() {
 }
 
 function abrirBusca() {
+  montarFiltrosDeCargo();
+  montarFiltrosDePartido();
   els.buscaInput.value = '';
   els.buscaLista.scrollTop = 0;
   renderBusca();
@@ -1173,6 +1313,54 @@ function ligarBusca() {
     els.buscaTrigger.focus({ preventScroll: true });
   });
   els.buscaInput.addEventListener('input', renderBusca);
+  els.buscaFiltros.addEventListener('click', e => {
+    if (e.target.closest('[data-limpar-filtros]')) {
+      cargosAtivos.clear();
+      for (const chip of els.buscaFiltros.querySelectorAll('[data-cargo]')) {
+        chip.classList.remove('is-ativo');
+        chip.setAttribute('aria-pressed', 'false');
+      }
+      atualizarBotaoLimparFiltros(els.buscaFiltros, false);
+      els.buscaLista.scrollTop = 0;
+      renderBusca();
+      return;
+    }
+    const chip = e.target.closest('.chip-filtro[data-cargo]');
+    if (!chip) return;
+    const { cargo } = chip.dataset;
+    if (cargosAtivos.has(cargo)) cargosAtivos.delete(cargo);
+    else cargosAtivos.add(cargo);
+    const ativo = cargosAtivos.has(cargo);
+    chip.classList.toggle('is-ativo', ativo);
+    chip.setAttribute('aria-pressed', String(ativo));
+    atualizarBotaoLimparFiltros(els.buscaFiltros, cargosAtivos.size > 0);
+    els.buscaLista.scrollTop = 0;
+    renderBusca();
+  });
+  els.buscaFiltrosPartidos.addEventListener('click', e => {
+    if (e.target.closest('[data-limpar-filtros]')) {
+      partidosAtivos.clear();
+      for (const chip of els.buscaFiltrosPartidos.querySelectorAll('[data-partido]')) {
+        chip.classList.remove('is-ativo');
+        chip.setAttribute('aria-pressed', 'false');
+      }
+      atualizarBotaoLimparFiltros(els.buscaFiltrosPartidos, false);
+      els.buscaLista.scrollTop = 0;
+      renderBusca();
+      return;
+    }
+    const chip = e.target.closest('.chip-filtro[data-partido]');
+    if (!chip) return;
+    const { partido } = chip.dataset;
+    if (partidosAtivos.has(partido)) partidosAtivos.delete(partido);
+    else partidosAtivos.add(partido);
+    const ativo = partidosAtivos.has(partido);
+    chip.classList.toggle('is-ativo', ativo);
+    chip.setAttribute('aria-pressed', String(ativo));
+    atualizarBotaoLimparFiltros(els.buscaFiltrosPartidos, partidosAtivos.size > 0);
+    els.buscaLista.scrollTop = 0;
+    renderBusca();
+  });
 
   /* clique fora do conteúdo fecha: no backdrop, o alvo é o próprio <dialog> */
   els.buscaDialog.addEventListener('click', e => {
