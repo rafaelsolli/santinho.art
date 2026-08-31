@@ -11,9 +11,28 @@
 
 /* ------------------------------------------------------------- constantes */
 
-const UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
-             'PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
+/* sigla + nome por extenso, na ordem alfabética de sigla usada no seletor */
+const UFS = [
+  ['AC', 'Acre'],              ['AL', 'Alagoas'],
+  ['AP', 'Amapá'],             ['AM', 'Amazonas'],
+  ['BA', 'Bahia'],             ['CE', 'Ceará'],
+  ['DF', 'Distrito Federal'],  ['ES', 'Espírito Santo'],
+  ['GO', 'Goiás'],             ['MA', 'Maranhão'],
+  ['MT', 'Mato Grosso'],       ['MS', 'Mato Grosso do Sul'],
+  ['MG', 'Minas Gerais'],      ['PA', 'Pará'],
+  ['PB', 'Paraíba'],           ['PR', 'Paraná'],
+  ['PE', 'Pernambuco'],        ['PI', 'Piauí'],
+  ['RJ', 'Rio de Janeiro'],    ['RN', 'Rio Grande do Norte'],
+  ['RS', 'Rio Grande do Sul'], ['RO', 'Rondônia'],
+  ['RR', 'Roraima'],           ['SC', 'Santa Catarina'],
+  ['SP', 'São Paulo'],         ['SE', 'Sergipe'],
+  ['TO', 'Tocantins'],
+];
+const NOME_DA_UF = new Map(UFS);
 const UF_PADRAO = 'SP';
+
+/* bandeiras baixadas por scripts/update-flags.mjs */
+const bandeiraDaUf = uf => 'assets/flags/' + uf + '.png';
 
 /* ordem eleitoral do §3 — não reordenar */
 const CARGOS = [
@@ -68,11 +87,16 @@ const carregando = new Map();
 let meta = null;
 
 const els = {
-  cards:  document.getElementById('cards'),
-  uf:     document.getElementById('uf-select'),
-  share:  document.getElementById('share'),
-  status: document.getElementById('status'),
-  toast:  document.getElementById('toast'),
+  cards:     document.getElementById('cards'),
+  ufTrigger: document.getElementById('uf-trigger'),
+  ufFlag:    document.getElementById('uf-flag'),
+  ufSigla:   document.getElementById('uf-sigla'),
+  ufDialog:  document.getElementById('uf-dialog'),
+  ufList:    document.getElementById('uf-list'),
+  ufClose:   document.getElementById('uf-close'),
+  share:     document.getElementById('share'),
+  status:    document.getElementById('status'),
+  toast:     document.getElementById('toast'),
 };
 
 /* -------------------------------------------------------------- dados (§43) */
@@ -241,13 +265,123 @@ function nomeCurtoDoCargo(cargo) {
 
 /* ------------------------------------------------------------- construção */
 
-function montarSelectUf() {
-  for (const uf of UFS) {
-    const opt = document.createElement('option');
-    opt.value = uf;
-    opt.textContent = uf;
-    els.uf.appendChild(opt);
+/* No cabeçalho fica só bandeira + sigla; o nome por extenso vive no diálogo. */
+function renderGatilhoUf() {
+  const nome = NOME_DA_UF.get(state.uf) || state.uf;
+  els.ufFlag.src = bandeiraDaUf(state.uf);
+  els.ufFlag.alt = '';                         // o nome vem no aria-label do botão
+  els.ufSigla.textContent = state.uf;
+  els.ufTrigger.setAttribute('aria-label', 'Estado: ' + nome + '. Trocar de estado');
+}
+
+/* A lista só é construída na primeira abertura: são 27 bandeiras (163 KB) que
+ * não têm por que entrar no primeiro carregamento (§35). */
+let listaUfMontada = false;
+
+function montarListaUf() {
+  if (listaUfMontada) return;
+  for (const [uf, nome] of UFS) {
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'uf-opcao';
+    b.dataset.uf = uf;
+
+    const img = document.createElement('img');
+    img.className = 'uf-opcao-flag';
+    img.src = bandeiraDaUf(uf);
+    img.alt = '';
+    img.width = 34;
+    img.height = 24;
+    img.loading = 'lazy';
+    img.decoding = 'async';
+
+    const nomeEl = document.createElement('span');
+    nomeEl.className = 'uf-opcao-nome';
+    nomeEl.textContent = nome;
+
+    const siglaEl = document.createElement('span');
+    siglaEl.className = 'uf-opcao-sigla';
+    siglaEl.textContent = uf;
+
+    b.append(img, nomeEl, siglaEl);
+    li.appendChild(b);
+    els.ufList.appendChild(li);
   }
+  listaUfMontada = true;
+}
+
+function opcoesUf() {
+  return [...els.ufList.querySelectorAll('.uf-opcao')];
+}
+
+function abrirSeletorUf() {
+  montarListaUf();
+  for (const b of opcoesUf()) {
+    const atual = b.dataset.uf === state.uf;
+    b.classList.toggle('is-atual', atual);
+    if (atual) b.setAttribute('aria-current', 'true');
+    else b.removeAttribute('aria-current');
+  }
+  els.ufTrigger.setAttribute('aria-expanded', 'true');
+  els.ufDialog.showModal();
+  const atual = els.ufList.querySelector('.uf-opcao.is-atual');
+  if (atual) atual.scrollIntoView({ block: 'center' });
+  (atual || opcoesUf()[0]).focus({ preventScroll: true });
+}
+
+function fecharSeletorUf() {
+  if (els.ufDialog.open) els.ufDialog.close();
+}
+
+/* teclado dentro do diálogo: setas percorrem, letra salta para o estado (Esc e
+ * o aprisionamento de foco vêm de graça no <dialog>) */
+function tecladoNoSeletorUf(e) {
+  const opcoes = opcoesUf();
+  if (!opcoes.length) return;
+  const atual = opcoes.indexOf(document.activeElement);
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const passo = e.key === 'ArrowDown' ? 1 : -1;
+    const i = (atual + passo + opcoes.length) % opcoes.length;
+    opcoes[i].focus();
+    return;
+  }
+  if (e.key === 'Home' || e.key === 'End') {
+    e.preventDefault();
+    opcoes[e.key === 'Home' ? 0 : opcoes.length - 1].focus();
+    return;
+  }
+  if (/^\p{L}$/u.test(e.key)) {
+    const letra = e.key.toLowerCase();
+    const combina = i => (NOME_DA_UF.get(opcoes[i].dataset.uf) || '')
+      .toLowerCase().startsWith(letra);
+    for (let n = 1; n <= opcoes.length; n++) {
+      const i = (Math.max(atual, 0) + n) % opcoes.length;
+      if (combina(i)) { opcoes[i].focus(); return; }
+    }
+  }
+}
+
+function ligarSeletorUf() {
+  els.ufTrigger.addEventListener('click', abrirSeletorUf);
+  els.ufClose.addEventListener('click', fecharSeletorUf);
+  els.ufDialog.addEventListener('close', () => {
+    els.ufTrigger.setAttribute('aria-expanded', 'false');
+    els.ufTrigger.focus({ preventScroll: true });
+  });
+  /* clique fora do conteúdo fecha */
+  els.ufDialog.addEventListener('click', e => {
+    if (e.target === els.ufDialog) fecharSeletorUf();
+  });
+  els.ufList.addEventListener('click', e => {
+    const opcao = e.target.closest('.uf-opcao');
+    if (!opcao) return;
+    fecharSeletorUf();
+    if (opcao.dataset.uf !== state.uf) trocarUf(opcao.dataset.uf);
+  });
+  els.ufDialog.addEventListener('keydown', tecladoNoSeletorUf);
 }
 
 function montarCards() {
@@ -514,7 +648,7 @@ function syncUrl() {
 function hydrateFromUrl() {
   const p = new URLSearchParams(location.search);
   const uf = (p.get('uf') || '').trim().toUpperCase();
-  state.uf = UFS.includes(uf) ? uf : UF_PADRAO;
+  state.uf = NOME_DA_UF.has(uf) ? uf : UF_PADRAO;
 
   for (const cargo of CARGOS) {
     const bruto = (p.get(cargo.key) || '').replace(/[^0-9-]/g, '').slice(0, cargo.len);
@@ -653,6 +787,7 @@ async function compartilhar() {
 
 function trocarUf(novaUf) {
   state.uf = novaUf;
+  renderGatilhoUf();
   syncUrl();
   renderAll();                       // cargos estaduais revalidam; presidente não muda (§6)
   /* uma base que falhou não fica presa no cache: trocar de UF é a chance de
@@ -675,14 +810,13 @@ function observarTecladoVirtual() {
 }
 
 function init() {
-  montarSelectUf();
   hydrateFromUrl();
   montarCards();
-  els.uf.value = state.uf;
+  renderGatilhoUf();
   renderAll();
   syncUrl();                          // normaliza a URL logo na abertura
 
-  els.uf.addEventListener('change', () => trocarUf(els.uf.value));
+  ligarSeletorUf();
   els.share.addEventListener('click', compartilhar);
   observarTecladoVirtual();
 

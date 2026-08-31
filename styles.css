@@ -79,10 +79,11 @@ body {
 
 .controls { display: flex; align-items: center; gap: 8px; }
 
-.uf { position: relative; display: flex; align-items: center; }
-
-.uf select {
-  appearance: none;
+/* gatilho de UF: no cabeçalho fica só bandeira + sigla */
+.uf-trigger {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   font: inherit;
   font-size: clamp(13px, 3.8vw, 15px);
   font-weight: 800;
@@ -91,14 +92,166 @@ body {
   background: transparent;
   border: 2px solid var(--ink);
   border-radius: 999px;
-  padding: 6px 26px 6px 11px;
+  padding: 5px 9px 5px 6px;
   line-height: 1;
+  cursor: pointer;
+  transition: background .12s ease, transform .12s ease;
 }
-.uf select:focus-visible { outline: 3px solid #c81d25; outline-offset: 2px; }
+.uf-trigger:active { transform: scale(.96); }
+.uf-trigger:focus-visible { outline: 3px solid #c81d25; outline-offset: 2px; }
+@media (hover: hover) {
+  .uf-trigger:hover { background: rgba(0, 0, 0, .05); }
+}
 
-.uf-caret {
-  position: absolute; right: 8px; width: 13px; height: 13px;
-  pointer-events: none; color: var(--ink);
+.uf-flag {
+  width: clamp(24px, 7vw, 30px);
+  height: auto;
+  aspect-ratio: 10 / 7;
+  object-fit: cover;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .28);
+  background: var(--paper-2);
+}
+.uf-sigla { font-variant-numeric: tabular-nums; }
+.uf-caret { width: 12px; height: 12px; flex: none; opacity: .6; }
+
+/* ------------------------------------------------- diálogo de escolha de UF */
+.uf-dialog {
+  margin: 0 auto;
+  padding: 0;
+  width: min(440px, 100%);
+  /* o navegador aplica max-width: calc(100% - 38px) a dialog, sobra do padding
+     e da borda padrão que zeramos acima — sem isto a folha fica estreita */
+  max-width: 100%;
+  max-height: min(78dvh, 620px);
+  position: fixed;
+  inset: auto 0 0 0;                 /* folha inferior no celular */
+  border: 0;
+  border-radius: 18px 18px 0 0;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 -12px 40px -14px rgba(0, 0, 0, .55);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+/* o `display: flex` acima sobrescreveria o `display: none` que o navegador
+   aplica a dialog fechado (estilo de autor vence o do agente), e a folha ficaria
+   desenhada no rodapé cobrindo o último card */
+.uf-dialog:not([open]) { display: none; }
+
+.uf-dialog::backdrop {
+  background: rgba(27, 23, 18, .55);
+  backdrop-filter: blur(2px);
+}
+.uf-dialog[open] { animation: subir .18s ease-out; }
+@keyframes subir { from { transform: translateY(14px); opacity: .6; } }
+
+.uf-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 14px 11px 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--neutral) 28%, transparent);
+}
+.uf-dialog-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+}
+.uf-close {
+  display: grid;
+  place-items: center;
+  width: 32px; height: 32px;
+  color: var(--ink-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.uf-close svg { width: 17px; height: 17px; }
+.uf-close:focus-visible { outline: 3px solid #c81d25; outline-offset: 1px; }
+
+.uf-list {
+  margin: 0;
+  padding: 6px 0 max(8px, env(safe-area-inset-bottom));
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;       /* não arrasta a página atrás */
+  -webkit-overflow-scrolling: touch;
+}
+
+.uf-opcao {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 10px 18px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.uf-opcao-flag {
+  width: 34px;
+  height: auto;
+  aspect-ratio: 10 / 7;
+  object-fit: cover;
+  flex: none;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .22);
+  background: var(--paper-2);
+}
+.uf-opcao-nome {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.uf-opcao-sigla {
+  flex: none;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  color: var(--ink-soft);
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--neutral) 18%, transparent);
+}
+.uf-opcao:focus-visible {
+  outline: 3px solid #c81d25;
+  outline-offset: -3px;
+}
+@media (hover: hover) {
+  .uf-opcao:hover { background: color-mix(in srgb, var(--neutral) 12%, transparent); }
+}
+.uf-opcao.is-atual {
+  background: color-mix(in srgb, #c81d25 9%, transparent);
+}
+.uf-opcao.is-atual .uf-opcao-nome { font-weight: 800; }
+.uf-opcao.is-atual .uf-opcao-sigla {
+  color: #fff;
+  background: #c81d25;
+}
+
+/* no desktop o diálogo vira um cartão centrado */
+@media (min-width: 700px) {
+  .uf-dialog {
+    inset: 0;
+    margin: auto;
+    max-height: min(80dvh, 620px);
+    border-radius: 14px;
+    box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .6);
+  }
+  .uf-dialog[open] { animation: aparecer .16s ease-out; }
+  @keyframes aparecer { from { transform: scale(.97); opacity: .5; } }
 }
 
 .share {

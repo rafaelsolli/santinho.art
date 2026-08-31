@@ -1556,7 +1556,9 @@ og.png                               # preview de compartilhamento
 data/       meta.json                # procedência e avisos da base
             br.json                  # presidente (base nacional)
             uf/AC.json … uf/TO.json  # uma base por UF, carregada sob demanda
+assets/     flags/AC.png … TO.png    # bandeiras das 27 UFs (163 KB)
 scripts/    update-data.mjs          # importador do TSE (só no build)
+            update-flags.mjs         # baixa as bandeiras (só no build)
             og.html                  # fonte do og.png
 tests/      interacao.mjs            # §48 e §50, em Chrome real
             fixtures/data/           # base fictícia, só para os testes
@@ -1854,7 +1856,59 @@ provavelmente funciona nos runners; se o Akamai bloquear o IP do runner, a Actio
 falha de forma visível — e o caminho alternativo é rodar o importador localmente
 e commitar `data/`.
 
-## 59.10. Publicação no GitHub Pages
+## 59.10. Seletor de estado
+
+O `<select>` nativo foi trocado por um seletor próprio: no cabeçalho fica apenas
+**bandeira + sigla**; tocar abre um diálogo com **bandeira, nome por extenso e
+sigla** das 27 UFs, com o estado atual destacado.
+
+Isso tensiona o §2.1 ("evitar modais desnecessários"). O julgamento aqui é que um
+seletor de 27 itens com bandeira não é um modal desnecessário: é o próprio
+controle, e sem ele o cabeçalho carregaria uma lista impossível de estilizar.
+Nada mais no produto usa modal.
+
+### Como é feito
+
+Usa o elemento nativo `<dialog>` com `showModal()`, que já dá de graça
+aprisionamento de foco, `Esc` para fechar, backdrop e devolução do foco ao
+gatilho. Em cima disso: setas ↑↓ percorrem a lista, `Home`/`End` vão aos
+extremos, e digitar uma letra salta para o primeiro estado com aquela inicial.
+Clique fora fecha. No celular é folha inferior; a partir de 700 px, cartão
+centrado.
+
+A lista só é construída **na primeira abertura**: são 27 bandeiras (163 KB) que
+não têm por que entrar no primeiro carregamento (§35). O `<img>` do cabeçalho
+carrega apenas a bandeira da UF corrente.
+
+### Bandeiras
+
+`scripts/update-flags.mjs` baixa as 27 bandeiras do Wikimedia Commons
+rasterizadas pequenas (`Special:FilePath/<arquivo>?width=160`, devolve PNG de
+1-19 KB). As bandeiras estaduais são símbolos oficiais, de domínio público no
+Brasil; a procedência de cada arquivo fica em `assets/flags/CREDITOS.md`.
+
+Mesma postura do importador do TSE: cada UF tem uma lista de nomes candidatos no
+Commons (`Bandeira do X`, `Bandeira de X`, `Bandeira do estado de X`…), o script
+usa o primeiro que responder 200 com imagem e **aborta listando as UFs que não
+resolveram**, em vez de deixar bandeira faltando em silêncio.
+
+```bash
+npm run update-flags
+```
+
+### Duas armadilhas do `<dialog>` que os testes pegaram
+
+Ambas viram teste de regressão, porque não são óbvias em revisão de código:
+
+- **`display` do diálogo fechado.** O navegador aplica `display: none` a
+  `dialog:not([open])`, mas estilo de autor vence estilo do agente: o
+  `display: flex` do layout deixava a folha desenhada no rodapé, cobrindo o card
+  do presidente. Precisa de `.uf-dialog:not([open]) { display: none }` explícito.
+- **`max-width` herdado.** O navegador aplica `max-width: calc(100% - 38px)` a
+  `dialog` — sobra do `padding: 1em` e da borda padrão, que zeramos. Sem
+  `max-width: 100%`, a folha ficava 38 px estreita e encostada num lado.
+
+## 59.11. Publicação no GitHub Pages
 
 Nada de build: *Settings → Pages → Deploy from a branch → `main` / root*.
 Existe `.nojekyll` para o Jekyll não interferir. Todos os caminhos são
@@ -1862,9 +1916,9 @@ Existe `.nojekyll` para o Jekyll não interferir. Todos os caminhos são
 `usuario.github.io/santinho.art/` e no domínio próprio. Para o domínio, adicione
 um arquivo `CNAME` com `santinho.art` e aponte o DNS.
 
-## 59.11. Verificação
+## 59.12. Verificação
 
-`tests/interacao.mjs` — **233 asserções passando**, cobrindo os §48/§50 e mais.
+`tests/interacao.mjs` — **268 asserções passando**, cobrindo os §48/§50 e mais.
 A suíte sobe o servidor estático, acha o Chrome e dirige um navegador de verdade.
 Ela serve `tests/fixtures/data` (base fictícia fixa), **não** `data/`: atualizar
 a base real do TSE não pode quebrar teste.
@@ -1894,6 +1948,11 @@ O que ela verifica:
 - sigla de partido longa (`SOLIDARIEDADE-DEMO`): selo inteiro e cargo preservado;
 - foto: placeholder `?` escondido quando há foto, visível quando não há, e foto
   quebrada voltando ao placeholder;
+- seletor de estado: diálogo fechado ao abrir a página e sem as 27 bandeiras
+  carregadas, abertura marcando o estado atual e levando o foco a ele, bandeira
+  e nome corretos por opção, setas/`Home`/letra/`Esc`, foco voltando ao gatilho,
+  folha ocupando a largura da tela e encostada na base, rolagem contida na lista,
+  e a escolha atualizando sigla, bandeira, URL e os cargos estaduais;
 - integração ponta a ponta com uma base **gerada pelo importador** (não o mock),
   validando acentuação e o filtro de candidatura inapta.
 
@@ -1916,7 +1975,7 @@ quatro nomes mais longos da base (30 caracteres) renderizando inteiros em
 320×640 e 390×844, e as fotos oficiais carregando nos seis cards sem nenhuma
 requisição falhando.
 
-## 59.12. Pendências conscientes
+## 59.13. Pendências conscientes
 
 - **`og:image`**: `og.png` (1200×630) está no repositório; a fonte é
   `scripts/og.html`, que se captura em 1200×630 com qualquer headless para

@@ -57,6 +57,7 @@ function montarSite() {
   for (const arquivo of ['index.html', 'styles.css', 'app.js'])
     symlinkSync(join(RAIZ, arquivo), join(dir, arquivo));
   cpSync(join(RAIZ, 'tests', 'fixtures', 'data'), join(dir, 'data'), { recursive: true });
+  cpSync(join(RAIZ, 'assets'), join(dir, 'assets'), { recursive: true });
   return dir;
 }
 
@@ -107,6 +108,15 @@ page.on('console', m => { const t = m.text();
   if (m.type() === 'error' && !t.includes('Failed to load resource')) erros.push(t); });
 const read = key => page.evaluate(READ, key);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* o seletor de UF é um diálogo: abre pelo gatilho, escolhe pela bandeira */
+async function escolherUf(uf) {
+  await page.click('#uf-trigger');
+  await sleep(120);
+  await page.click(`.uf-opcao[data-uf="${uf}"]`);
+  await sleep(250);
+}
+const siglaNoCabecalho = () => page.$eval('#uf-sigla', e => e.textContent);
 
 /* ------------------------------------------------- §50 viewports: sem scroll */
 console.log('\n== §50 viewports (zero scroll vertical, zero overflow horizontal)');
@@ -175,7 +185,9 @@ console.log('\n== §4.2 inicialização por URL');
 await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
 await page.goto(BASE + '?uf=sp&df=1313&de=13131&s1=131&s2=132&g=13&p=31', { waitUntil: 'networkidle0' });
 await sleep(150);
-eq('uf selecionada', await page.$eval('#uf-select', e => e.value), 'SP');
+eq('uf no cabecalho', await siglaNoCabecalho(), 'SP');
+eq('bandeira no cabecalho', await page.$eval('#uf-flag', e => e.getAttribute('src')),
+   'assets/flags/SP.png');
 const df = await read('df');
 eq('df digitos', df.digits, '1313');
 eq('df nome', df.name, 'MAYA EXEMPLO');
@@ -335,14 +347,12 @@ eq('buraco sobrevive ao recarregar', (await read('de')).digits, '13_7_');
 console.log('\n== §6 troca de UF');
 await page.goto(BASE + '?uf=sp&df=1313&p=13', { waitUntil: 'networkidle0' }); await sleep(150);
 eq('SP: df', (await read('df')).name, 'MAYA EXEMPLO');
-await page.select('#uf-select', 'MG');
-await sleep(250);
+await escolherUf('MG');
 eq('MG mantem os numeros', (await read('df')).digits, '1313');
 eq('MG revalida cargo estadual', (await read('df')).name, 'MAYA RIBEIRO DEMO');
 eq('presidente permanece nacional', (await read('p')).name, 'PRES EXEMPLO A');
 eq('url atualizada', await page.evaluate(() => location.search), '?uf=mg&df=1313&p=13');
-await page.select('#uf-select', 'DF');
-await sleep(250);
+await escolherUf('DF');
 eq('DF: rotulo deputado distrital', (await read('de')).office, 'Dep. distrital');
 eq('DF: aria com nome completo', await page.$eval('#num-de', e => e.getAttribute('aria-label')),
    'Deputado distrital, número de 5 dígitos');
@@ -367,8 +377,8 @@ ok('digitacao continua funcionando', await (async () => {
 page.off('request', bloq);
 await page.setRequestInterception(false);
 ok('trocar de UF e voltar tenta de novo', await (async () => {
-  await page.select('#uf-select', 'MG'); await sleep(250);
-  await page.select('#uf-select', 'SP'); await sleep(350);
+  await escolherUf('MG');
+  await escolherUf('SP');
   return (await read('df')).name === 'MAYA EXEMPLO'
       && (await page.$eval('#status', e => e.textContent)) !== 'Não foi possível validar os candidatos agora.';
 })());
@@ -457,6 +467,81 @@ eq('numero digitado durante a carga foi preservado', (await read('df')).name, 'M
 eq('aviso sai depois de carregar', await page.$eval('#status', e => e.textContent), 'dados de exemplo — base não oficial (MOCK)');
 page.off('request', atrasar);
 await page.setRequestInterception(false);
+
+/* ------------------------------------------- seletor de UF (bandeira + sigla) */
+console.log('\n== seletor de UF: diálogo com bandeira, nome e sigla');
+await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+await page.goto(BASE + '?uf=sp&g=13', { waitUntil: 'networkidle0' });
+await sleep(200);
+eq('cabecalho mostra so a sigla', await siglaNoCabecalho(), 'SP');
+eq('cabecalho tem bandeira', await page.$eval('#uf-flag', e => e.getAttribute('src')), 'assets/flags/SP.png');
+eq('nome do estado no aria-label', await page.$eval('#uf-trigger', e => e.getAttribute('aria-label')),
+   'Estado: São Paulo. Trocar de estado');
+eq('dialogo fechado no inicio', await page.$eval('#uf-dialog', e => e.open), false);
+eq('aria-expanded false', await page.$eval('#uf-trigger', e => e.getAttribute('aria-expanded')), 'false');
+eq('as 27 bandeiras nao entram no primeiro carregamento',
+   await page.evaluate(() => document.querySelectorAll('.uf-opcao').length), 0);
+
+await page.click('#uf-trigger');
+await sleep(200);
+eq('dialogo abriu', await page.$eval('#uf-dialog', e => e.open), true);
+eq('aria-expanded true', await page.$eval('#uf-trigger', e => e.getAttribute('aria-expanded')), 'true');
+eq('27 opcoes', await page.evaluate(() => document.querySelectorAll('.uf-opcao').length), 27);
+const opcao = await page.evaluate(() => {
+  const b = document.querySelector('.uf-opcao[data-uf="MG"]');
+  return { flag: b.querySelector('.uf-opcao-flag').getAttribute('src'),
+           nome: b.querySelector('.uf-opcao-nome').textContent,
+           sigla: b.querySelector('.uf-opcao-sigla').textContent };
+});
+eq('opcao traz bandeira, nome e sigla', opcao, { flag: 'assets/flags/MG.png', nome: 'Minas Gerais', sigla: 'MG' });
+eq('estado atual marcado', await page.evaluate(() => {
+  const a = document.querySelector('.uf-opcao.is-atual');
+  return [a.dataset.uf, a.getAttribute('aria-current')];
+}), ['SP', 'true']);
+eq('foco vai para o estado atual', await page.evaluate(() => document.activeElement.dataset.uf), 'SP');
+ok('bandeiras carregaram de verdade', await page.evaluate(async () => {
+  await new Promise(r => setTimeout(r, 600));
+  const imgs = [...document.querySelectorAll('.uf-opcao-flag')];
+  return imgs.filter(i => i.naturalWidth > 0).length >= 10;
+}));
+const caixa = await page.evaluate(() => {
+  const r = document.getElementById('uf-dialog').getBoundingClientRect();
+  return { x: Math.round(r.x), largura: Math.round(r.width), viewport: innerWidth,
+           base: Math.round(innerHeight - r.bottom), altura: Math.round(r.height) };
+});
+eq('folha ocupa a largura da tela no celular', [caixa.x, caixa.largura], [0, caixa.viewport]);
+eq('folha encostada na base', caixa.base, 0);
+ok('folha nao toma a tela toda', caixa.altura < caixa.viewport * 2 && caixa.altura <= 660,
+   '(' + caixa.altura + 'px)');
+ok('a lista rola dentro do dialogo, nao na pagina', await page.evaluate(() => {
+  const de = document.scrollingElement;
+  return de.scrollHeight - de.clientHeight <= 1;
+}));
+
+await page.keyboard.press('ArrowDown');
+eq('ArrowDown percorre a lista', await page.evaluate(() => document.activeElement.dataset.uf), 'SE');
+await page.keyboard.press('ArrowUp');
+eq('ArrowUp volta', await page.evaluate(() => document.activeElement.dataset.uf), 'SP');
+await page.keyboard.press('Home');
+eq('Home vai para o primeiro', await page.evaluate(() => document.activeElement.dataset.uf), 'AC');
+await page.keyboard.press('b');
+eq('letra salta para o estado (Bahia)', await page.evaluate(() => document.activeElement.dataset.uf), 'BA');
+await page.keyboard.press('Escape');
+await sleep(200);
+eq('Esc fecha', await page.$eval('#uf-dialog', e => e.open), false);
+eq('foco volta para o gatilho', await page.evaluate(() => document.activeElement.id), 'uf-trigger');
+eq('Esc nao troca de estado', await siglaNoCabecalho(), 'SP');
+
+await escolherUf('MG');
+eq('escolha atualiza a sigla', await siglaNoCabecalho(), 'MG');
+eq('escolha atualiza a bandeira', await page.$eval('#uf-flag', e => e.getAttribute('src')), 'assets/flags/MG.png');
+eq('escolha atualiza a URL', await page.evaluate(() => location.search), '?uf=mg&g=13');
+eq('dialogo fechou apos escolher', await page.$eval('#uf-dialog', e => e.open), false);
+eq('escolha revalida o cargo estadual', (await read('g')).name, 'OSMAR EXEMPLO');
+await page.click('#uf-trigger'); await sleep(150);
+eq('marcacao acompanha a escolha', await page.evaluate(() => document.querySelector('.uf-opcao.is-atual').dataset.uf), 'MG');
+await page.click('#uf-close'); await sleep(180);
+eq('botao fechar funciona', await page.$eval('#uf-dialog', e => e.open), false);
 
 /* ----------------------------------------------------------- §5 share */
 console.log('\n== §5 compartilhamento (fallback clipboard)');

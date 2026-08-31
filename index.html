@@ -38,11 +38,11 @@
   </div>
 
   <div class="controls">
-    <label class="uf">
-      <span class="sr-only">Unidade federativa</span>
-      <select id="uf-select"></select>
+    <button id="uf-trigger" class="uf-trigger" type="button" aria-haspopup="dialog" aria-expanded="false">
+      <img id="uf-flag" class="uf-flag" alt="" width="30" height="21" decoding="async">
+      <span id="uf-sigla" class="uf-sigla"></span>
       <svg class="uf-caret" viewBox="0 0 256 256" aria-hidden="true"><path d="M64 104l64 64 64-64" fill="none" stroke="currentColor" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </label>
+    </button>
 
     <button id="share" class="share" type="button" aria-label="Compartilhar minha cola eleitoral">
       <!-- Ícone equivalente ao ShareNetwork (Phosphor), desenhado inline para evitar dependência -->
@@ -61,6 +61,18 @@
 </header>
 
 <main class="cards" id="cards"></main>
+
+<dialog id="uf-dialog" class="uf-dialog" aria-labelledby="uf-dialog-title">
+  <div class="uf-dialog-head">
+    <h2 class="uf-dialog-title" id="uf-dialog-title">Escolha o estado</h2>
+    <button id="uf-close" class="uf-close" type="button" aria-label="Fechar">
+      <svg viewBox="0 0 256 256" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="24" stroke-linecap="round">
+        <line x1="72" y1="72" x2="184" y2="184"/><line x1="184" y1="72" x2="72" y2="184"/>
+      </svg>
+    </button>
+  </div>
+  <ul class="uf-list" id="uf-list"></ul>
+</dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
