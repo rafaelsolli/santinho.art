@@ -1,6 +1,8 @@
 <!doctype html>
 <!-- Fonte da imagem de preview (Open Graph). Para regerar og.png:
-     abra em 1200x630 e capture a viewport, ou:
+     abra em 1200x630 e capture a viewport. Números "00" de propósito: nenhum
+     partido tem esse número, então a imagem não carrega identidade de legenda.
+     Ou:
      node -e "..." com qualquer headless. Ver README §59.12. -->
 <meta charset="utf-8">
 <style>
@@ -10,28 +12,28 @@
     display: flex; flex-direction: column; justify-content: center; gap: 34px;
     padding: 0 88px;
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    color: #1b1712;
+    color: #17181b;
     background:
-      radial-gradient(120% 70% at 50% 0%, #f9f3e9 0%, transparent 60%),
+      radial-gradient(120% 70% at 50% 0%, #f6f6f8 0%, transparent 60%),
       repeating-linear-gradient(135deg, rgba(0,0,0,.02) 0 3px, transparent 3px 7px),
-      #efe7da;
+      #ececee;
   }
   h1 { font-size: 92px; font-weight: 800; letter-spacing: -.035em; line-height: .95; }
-  h1 span { color: #c81d25; }
-  p.sub { font-size: 27px; font-weight: 700; letter-spacing: .3em; color: #6a6055; margin-top: 14px; }
-  p.claim { font-size: 34px; font-weight: 600; color: #3b332a; }
+  h1 span { color: #6b6d73; }
+  p.sub { font-size: 27px; font-weight: 700; letter-spacing: .3em; color: #6b6d73; margin-top: 14px; }
+  p.claim { font-size: 34px; font-weight: 600; color: #3a3b40; }
   .cards { display: grid; gap: 16px; max-width: 780px; }
   .card {
     position: relative; overflow: hidden;
     height: 104px; display: grid; grid-template-columns: auto 1fr auto;
     align-items: center; gap: 30px; padding-right: 30px;
-    background: #fffdf8; border-radius: 13px;
+    background: #fbfbfc; border-radius: 13px;
     box-shadow: 0 2px 0 rgba(0,0,0,.14), 0 14px 26px -20px rgba(0,0,0,.6);
   }
   .band { position: absolute; inset: 0 auto 0 0; width: 104px;
           clip-path: polygon(0 0, 100% 0, 58% 100%, 0 100%); }
   .photo { position: relative; width: 61px; height: 81px; margin-left: 20px; border-radius: 6px;
-           background: linear-gradient(160deg, #fff, #e2d8c6);
+           background: linear-gradient(160deg, #fff, #dcdce0);
            box-shadow: 0 0 0 3px rgba(255,255,255,.95); display: grid; place-items: center;
            font-size: 34px; font-weight: 800; color: #b3a89a; }
   .id { display: grid; gap: 7px; }
@@ -39,7 +41,7 @@
   .row { display: flex; align-items: center; gap: 10px; }
   .selo { font-size: 17px; font-weight: 800; letter-spacing: .06em; color: #fff;
           padding: 5px 8px; border-radius: 4px; }
-  .cargo { font-size: 16px; font-weight: 700; letter-spacing: .1em; color: #6a6055; }
+  .cargo { font-size: 16px; font-weight: 700; letter-spacing: .1em; color: #6b6d73; }
   .num { font-size: 62px; font-weight: 800; letter-spacing: -.02em;
          font-variant-numeric: tabular-nums; padding: 0 14px; border-radius: 5px; }
   .sep { border-left: 4px dotted rgba(0,0,0,.28); margin: 0 6px; align-self: stretch; }
@@ -53,32 +55,32 @@
 
 <div class="cards">
   <div class="card">
-    <div class="band" style="background:linear-gradient(150deg,#c81d25,#8f1419)"></div>
-    <div class="photo" style="color:#c3b6a2">?</div>
+    <div class="band" style="background:linear-gradient(150deg,#5a5c62,#33353a)"></div>
+    <div class="photo" style="color:#b8b9be">?</div>
     <div class="id">
       <div class="nome">SEU CANDIDATO</div>
       <div class="row">
-        <span class="selo" style="background:#c81d25">PARTIDO</span>
+        <span class="selo" style="background:#3a3b40">PARTIDO</span>
         <span class="cargo">DEP. FEDERAL</span>
       </div>
     </div>
-    <div class="num" style="color:#a3151c;background:rgba(200,29,37,.09);display:flex">
-      13<span class="sep"></span>13
+    <div class="num" style="color:#2a2b30;background:rgba(23,24,27,.07);display:flex">
+      00<span class="sep"></span>00
     </div>
   </div>
 
   <div class="card">
-    <div class="band" style="background:linear-gradient(150deg,#1d4ed8,#15369a)"></div>
-    <div class="photo" style="color:#b9bfcc">?</div>
+    <div class="band" style="background:linear-gradient(150deg,#8b8d94,#5a5c62)"></div>
+    <div class="photo" style="color:#b8b9be">?</div>
     <div class="id">
-      <div class="tag" style="color:#15369a;background:rgba(29,78,216,.14)">VOTO DE LEGENDA</div>
+      <div class="tag" style="color:#3a3b40;background:rgba(23,24,27,.10)">VOTO DE LEGENDA</div>
       <div class="row">
-        <span class="selo" style="background:#1d4ed8">PARTIDO</span>
+        <span class="selo" style="background:#6b6d73">PARTIDO</span>
         <span class="cargo">DEP. ESTADUAL</span>
       </div>
     </div>
-    <div class="num" style="color:#1a44b8;background:rgba(29,78,216,.09);display:flex">
-      45<span class="sep"></span><span style="opacity:.34">–––</span>
+    <div class="num" style="color:#2a2b30;background:rgba(23,24,27,.07);display:flex">
+      00<span class="sep"></span><span style="opacity:.34">–––</span>
     </div>
   </div>
 </div>

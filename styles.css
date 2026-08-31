@@ -4,16 +4,22 @@
 :root {
   /* paleta de partido derivada por hash da sigla (§16) — nunca a cor real
      do partido, para preservar a neutralidade exigida pelo §46 */
-  --paper:      #efe7da;
-  --paper-2:    #e2d8c6;
-  --ink:        #1b1712;
-  --ink-soft:   #6a6055;
-  --card:       #fffdf8;
-  --neutral:    #9a9186;
+  /* Cinzas puros de propósito: qualquer matiz no cromo do produto competiria
+     com as cores dos partidos e deixaria de ser neutro (§46). A única cor na
+     tela é a derivada da sigla do partido. */
+  --paper:      #ececee;
+  --paper-2:    #dcdce0;
+  --ink:        #17181b;
+  --ink-soft:   #6b6d73;
+  --card:       #fbfbfc;
+  --neutral:    #9a9ca2;
+  --focus:      #17181b;
   --c:          var(--neutral);      /* cor do santinho, sobrescrita por card */
 
   --photo-h:    78cqh;
   --photo-w:    calc(var(--photo-h) * 3 / 4);   /* proporção 3:4 obrigatória (§17) */
+  --btn:        clamp(32px, 9.4vw, 38px);   /* altura comum dos controles do header */
+  --flag-w:     calc(var(--btn) * 10 / 7);  /* bandeira em 10:7 na altura do botão */
   --gap:        clamp(5px, 1.1vh, 10px);
   --pad-x:      clamp(9px, 3.2vw, 18px);
   --radius:     clamp(7px, 1.4vh, 12px);
@@ -35,7 +41,7 @@ body {
   font-family: "Helvetica Neue", Helvetica, Arial, system-ui, -apple-system, sans-serif;
   color: var(--ink);
   background:
-    radial-gradient(120% 60% at 50% 0%, #f7f1e6 0%, transparent 60%),
+    radial-gradient(120% 60% at 50% 0%, #f5f5f7 0%, transparent 60%),
     repeating-linear-gradient(135deg, rgba(0,0,0,.014) 0 2px, transparent 2px 5px),
     var(--paper);
   -webkit-text-size-adjust: 100%;
@@ -66,7 +72,7 @@ body {
   letter-spacing: -.03em;
   line-height: 1;
 }
-.brand-dot { color: #c81d25; }
+.brand-dot { color: var(--ink-soft); }
 
 .brand-sub {
   margin: 3px 0 0;
@@ -79,41 +85,52 @@ body {
 
 .controls { display: flex; align-items: center; gap: 8px; }
 
-/* gatilho de UF: no cabeçalho fica só bandeira + sigla */
+/* Gatilho de UF: no cabeçalho fica só bandeira + sigla.
+   Usa o mesmo material dos cards — preenchimento creme, raio pequeno e sombra
+   suave — em vez de contorno grosso: precisa parecer clicável sem brigar com os
+   números, que são o elemento mais alto da tela (§56). */
 .uf-trigger {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+  /* duas metades exatas: bandeira à esquerda, sigla centrada à direita */
+  display: grid;
+  grid-template-columns: var(--flag-w) var(--flag-w);
+  align-items: stretch;
+  height: var(--btn);            /* mesma altura do botão de compartilhar */
+  padding: 0;
+  overflow: hidden;
   font: inherit;
-  font-size: clamp(13px, 3.8vw, 15px);
-  font-weight: 800;
-  letter-spacing: .04em;
   color: var(--ink);
-  background: transparent;
-  border: 2px solid var(--ink);
-  border-radius: 999px;
-  padding: 5px 9px 5px 6px;
-  line-height: 1;
+  background: var(--card);
+  border: 0;
+  border-radius: calc(var(--radius) * .62);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .14), 0 5px 12px -9px rgba(0, 0, 0, .55);
   cursor: pointer;
-  transition: background .12s ease, transform .12s ease;
+  transition: transform .12s ease, box-shadow .12s ease;
 }
 .uf-trigger:active { transform: scale(.96); }
-.uf-trigger:focus-visible { outline: 3px solid #c81d25; outline-offset: 2px; }
+.uf-trigger:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 @media (hover: hover) {
-  .uf-trigger:hover { background: rgba(0, 0, 0, .05); }
+  .uf-trigger:hover {
+    box-shadow: 0 1px 0 rgba(0, 0, 0, .18), 0 7px 16px -9px rgba(0, 0, 0, .6);
+  }
 }
 
+/* bandeira encostada na borda, como a foto encosta na faixa do card */
 .uf-flag {
-  width: clamp(24px, 7vw, 30px);
-  height: auto;
-  aspect-ratio: 10 / 7;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, .28);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18);
   background: var(--paper-2);
 }
-.uf-sigla { font-variant-numeric: tabular-nums; }
-.uf-caret { width: 12px; height: 12px; flex: none; opacity: .6; }
+
+.uf-sigla {
+  display: grid;
+  place-items: center;
+  font-size: clamp(13px, 3.9vw, 15px);
+  font-weight: 800;
+  letter-spacing: .06em;
+  font-variant-numeric: tabular-nums;
+}
 
 /* ------------------------------------------------- diálogo de escolha de UF */
 .uf-dialog {
@@ -172,7 +189,7 @@ body {
   cursor: pointer;
 }
 .uf-close svg { width: 17px; height: 17px; }
-.uf-close:focus-visible { outline: 3px solid #c81d25; outline-offset: 1px; }
+.uf-close:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
 
 .uf-list {
   margin: 0;
@@ -226,19 +243,19 @@ body {
   background: color-mix(in srgb, var(--neutral) 18%, transparent);
 }
 .uf-opcao:focus-visible {
-  outline: 3px solid #c81d25;
+  outline: 3px solid var(--focus);
   outline-offset: -3px;
 }
 @media (hover: hover) {
   .uf-opcao:hover { background: color-mix(in srgb, var(--neutral) 12%, transparent); }
 }
 .uf-opcao.is-atual {
-  background: color-mix(in srgb, #c81d25 9%, transparent);
+  background: color-mix(in srgb, var(--neutral) 22%, transparent);
 }
 .uf-opcao.is-atual .uf-opcao-nome { font-weight: 800; }
 .uf-opcao.is-atual .uf-opcao-sigla {
-  color: #fff;
-  background: #c81d25;
+  color: var(--card);
+  background: var(--ink);
 }
 
 /* no desktop o diálogo vira um cartão centrado */
@@ -256,16 +273,16 @@ body {
 
 .share {
   display: grid; place-items: center;
-  width: clamp(34px, 10vw, 42px); aspect-ratio: 1;
+  width: var(--btn); height: var(--btn);
   color: var(--card);
   background: var(--ink);
-  border: 0; border-radius: 999px;
+  border: 0; border-radius: calc(var(--radius) * .7);
   cursor: pointer;
   transition: transform .12s ease, background .12s ease;
 }
 .share svg { width: 55%; height: 55%; }
 .share:active { transform: scale(.93); }
-.share:focus-visible { outline: 3px solid #c81d25; outline-offset: 2px; }
+.share:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
 .tagline, .status {
   grid-column: 1 / -1;
@@ -277,7 +294,7 @@ body {
 .status { font-weight: 700; }
 body.has-status .tagline { display: none; }
 .status:empty { display: none; }
-.status[data-kind="warn"] { color: #a3341c; }
+.status[data-kind="warn"] { color: var(--ink); }
 
 /* ---------------------------------------------------------------- cards */
 .cards {
@@ -391,7 +408,7 @@ body.has-status .tagline { display: none; }
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--neutral) 40%, transparent);
 }
 .name.is-tag[data-tag="legenda"] {
-  color: color-mix(in srgb, var(--c) 78%, #000);
+  color: var(--c-escura, var(--ink));
   background: color-mix(in srgb, var(--c) 16%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent);
 }
@@ -413,7 +430,7 @@ body.has-status .tagline { display: none; }
   line-height: 1;
   padding: .34em .5em;
   border-radius: 3px;
-  color: #fff;
+  color: var(--c-txt, var(--card));
   background: var(--c);
 }
 .party[hidden] { display: none; }
@@ -435,23 +452,12 @@ body.has-status .tagline { display: none; }
   position: relative;
   padding: 0 clamp(3px, 1.4cqw, 9px);   /* constante: focar não desloca nada (§29) */
 }
-.numwrap::before {
-  content: "";
-  position: absolute;
-  inset: 8% 0;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--c) 9%, transparent);
-  clip-path: polygon(9% 0, 100% 0, 100% 100%, 0 100%);
-  opacity: 1;
-  transition: opacity .12s ease;
-}
-.card.is-focused .numwrap::before { opacity: 0; }
 
 .digits {
   display: flex;
   align-items: stretch;
   gap: 2px;
-  font-size: min(42cqh, calc(33cqw / var(--n, 4)));
+  font-size: min(42cqh, calc(31cqw / var(--n, 4)));
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
@@ -464,8 +470,14 @@ body.has-status .tagline { display: none; }
   padding: .1em .04em;
   font-weight: 800;
   letter-spacing: -.02em;
-  color: color-mix(in srgb, var(--c) 88%, #000);
-  border-radius: .1em;
+  color: var(--c-escura, var(--ink));
+  border-radius: .12em;
+  /* A casinha é permanente, não só em edição. É o que faz o número parecer
+     editável antes de qualquer toque — o §30 sugeria virar bloco tipográfico
+     em repouso, mas aí o campo não se anuncia como campo, e a troca de
+     aparência entre leitura e edição pesa mais que o ganho estético. */
+  background: color-mix(in srgb, var(--c) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 20%, transparent);
   transition: background .12s ease, color .12s ease, box-shadow .12s ease;
 }
 .digit.is-empty { color: color-mix(in srgb, var(--neutral) 60%, transparent); }
@@ -480,17 +492,14 @@ body.has-status .tagline { display: none; }
   border-left: 2px dotted color-mix(in srgb, var(--neutral) 75%, transparent);
 }
 
-/* modo leitura: sem foco, o número vira um bloco tipográfico único (§30) */
-.card:not(.is-focused) .digits { gap: 0; letter-spacing: -.01em; }
-.card:not(.is-focused) .digit { min-width: .66em; }
-
-/* em edição, cada dígito ganha casinha e o dígito atual, destaque claro (§29) */
+/* em edição a casinha só ganha um pouco mais de presença — nenhuma mudança de
+   geometria, para não haver deslocamento ao focar (§29) */
 .card.is-focused .digit {
-  background: color-mix(in srgb, var(--c) 8%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 22%, transparent);
+  background: color-mix(in srgb, var(--c) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 32%, transparent);
 }
 .card.is-focused .digit.is-caret {
-  color: #fff;
+  color: var(--c-txt, var(--card));
   background: var(--c);
   box-shadow: inset 0 0 0 1px var(--c), 0 0 0 2px color-mix(in srgb, var(--c) 30%, transparent);
 }
@@ -510,7 +519,7 @@ body.has-status .tagline { display: none; }
 
 /* card em edição: halo, sem deslocamento (§29) */
 .card.is-focused {
-  background: #fffefb;
+  background: #fff;
   box-shadow: 0 0 0 2px var(--ink), 0 0 0 6px color-mix(in srgb, var(--c) 22%, transparent),
               0 6px 16px -10px rgba(0,0,0,.6);
 }
@@ -544,12 +553,12 @@ body.has-status .tagline { display: none; }
 @media (max-height: 680px) {
   .brand-sub { letter-spacing: .1em; }
   .header { padding-top: 0; }
-  .digits { font-size: min(40cqh, calc(32cqw / var(--n, 4))); }
+  .digits { font-size: min(40cqh, calc(30cqw / var(--n, 4))); }
 }
 @media (max-height: 620px) {
   .brand-name { font-size: clamp(16px, 4.6vw, 20px); }
   .brand-sub { display: none; }
-  .digits { font-size: min(37cqh, calc(31cqw / var(--n, 4))); }
+  .digits { font-size: min(37cqh, calc(29cqw / var(--n, 4))); }
 }
 
 /* teclado virtual aberto: aperta o header e os gaps, mantém os 6 cards */

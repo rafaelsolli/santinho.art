@@ -1554,11 +1554,13 @@ uma atualização da base real não quebre a suíte.
 index.html  styles.css  app.js       # o site inteiro
 og.png                               # preview de compartilhamento
 data/       meta.json                # procedência e avisos da base
+            cores-partidos.json      # sigla → cor oficial (Wikidata P465)
             br.json                  # presidente (base nacional)
             uf/AC.json … uf/TO.json  # uma base por UF, carregada sob demanda
 assets/     flags/AC.png … TO.png    # bandeiras das 27 UFs (163 KB)
 scripts/    update-data.mjs          # importador do TSE (só no build)
             update-flags.mjs         # baixa as bandeiras (só no build)
+            update-party-colors.mjs  # cores dos partidos (só no build)
             og.html                  # fonte do og.png
 tests/      interacao.mjs            # §48 e §50, em Chrome real
             fixtures/data/           # base fictícia, só para os testes
@@ -1662,12 +1664,89 @@ Existe, então, um sexto estado: o card mostra `—` em vez de `INVÁLIDO`, mant
 números e continua editável e compartilhável. `INVÁLIDO` só aparece quando a base
 está carregada e realmente não contém aquele número.
 
-## 59.6. Cores e neutralidade
+## 59.6. Cores: cinza no produto, cor real no partido
 
-A cor de cada card vem de **hash da sigla do partido** sobre uma paleta fixa de
-10 cores (`PALETA` em `app.js`). Não é a cor real de nenhum partido — é
-exatamente isso que sustenta a neutralidade do §46: nenhuma legenda ganha
-identidade visual própria no produto.
+A regra é uma inversão do que estava aqui antes, e vale registrar o porquê.
+
+**O cromo do produto é cinza puro.** Nenhum matiz em fundo, card, tipografia ou
+controle. Uma paleta creme quente — que era o desenho original — é ela própria
+uma cor competindo com as das legendas, e a cor de partido em cima dela nunca
+fica limpa. Em cinza, **a única cor na tela é a do partido**.
+
+**A cor de cada partido é a real.** O §16 lista "derivada do partido" como
+primeira opção, e hash da sigla como segunda; a versão anterior usava hash,
+argumentando neutralidade. O argumento não se sustenta: hash põe o PT em roxo,
+que não é neutro, é *errado* — e informação errada não é neutralidade. Cor real
+não privilegia ninguém, porque **toda** legenda recebe a sua.
+
+### De onde vem a cor
+
+`scripts/update-party-colors.mjs` → `data/cores-partidos.json`, a partir da
+propriedade **P465 (cor)** do Wikidata, que é citável e reconferível — não de
+memória.
+
+```bash
+npm run update-colors      # 27 das 30 siglas da base atual
+```
+
+São **duas consultas**: a restrita (instância direta de "partido político",
+precisa) e, para o que sobrou, uma ampla — qualquer entidade brasileira com cor,
+filtrada pelo casamento de sigla/rótulo. A segunda existe porque nem todo
+partido está tipado como instância direta: PCB e PCdoB não estão, e a caminhada
+de subclasses (`P31/P279*`) derruba o endpoint com 502. Os achados da consulta
+ampla são listados na saída para auditoria.
+
+Só resolve siglas que estão de fato na base gerada por `update-data.mjs`. Sigla
+sem cor conhecida **não derruba o build**: cai na paleta por hash, que agora é
+de cinzas — então a ausência de cor aparece como ausência, não como cor errada.
+
+Hoje ficam de fora `MISSÃO`, `PRD` e `UP`, e o motivo importa:
+
+- **MISSÃO** é a legenda que herdou o número 14. A única entrada relacionada no
+  Wikidata é o PTB, `#005533`, marcado como **extinto em 2023**. Pintar o MISSÃO
+  de verde-escuro do PTB seria atribuir uma identidade que o dado não sustenta —
+  o mesmo erro do "PL laranja".
+- **PRD** (2023) e **UP** não têm `P465` no Wikidata.
+
+Para preencher qualquer uma delas basta uma linha em `CORES_MANUAIS`, com o
+motivo — é o lugar previsto para conhecimento que a fonte não tem.
+
+Três detalhes que custaram tempo e estão codificados no script:
+
+- **Legenda extinta.** O Wikidata tem duas entradas para "PL": `#FF7F00`
+  (laranja) para o PL de 1985-2006 e `#0F0073` para o fundado em 2006, que é o
+  atual. O filtro de dissolução (`P576`) resolve — e a lembrança popular de
+  "PL laranja" é justamente a legenda errada. `CORES_MANUAIS` existe para
+  exceções e está **vazio de propósito**.
+- **Renomeações.** Várias legendas mudaram de nome e o Wikidata guarda a sigla
+  antiga em `P1813`: Republicanos→PRB, Cidadania→PPS, AGIR→PTC,
+  Solidariedade→SD. O casamento é feito por sigla **ou por rótulo**, ambos
+  normalizados sem acento; `APELIDOS` cobre o resto (União Brasil, Unidade
+  Popular, PCdoB).
+- **`P1813` tem de ser `OPTIONAL`.** União Brasil e Democrata não têm sigla no
+  Wikidata e eram descartados antes de chegar ao casamento por rótulo.
+
+### Contraste
+
+Cor real inclui amarelo (PSOL `#FFEE57`) e azul-claro (Republicanos `#4DBCE7`),
+onde texto branco é ilegível. Cada cor gera duas variantes calculadas por
+luminância WCAG, uma vez por sigla:
+
+```text
+--c         cor cheia          → faixa diagonal, tintas, dígito em foco
+--c-txt     #fbfbfc ou #17181b → texto sobre a cor cheia (selo, dígito em foco)
+--c-escura  cor escurecida     → número e nome sobre o card quase branco
+```
+
+`--c-escura` escurece em passos de 10% até a luminância cair abaixo de 0,17, o
+que dá ~4,5:1 contra o card. A suíte mede a razão de contraste de verdade, em
+cor escura e em cor clara, em vez de confiar no olho.
+
+### Marca
+
+O favicon anterior era um quadrado **vermelho com "13"** — que é número de
+partido real. Virou marca neutra (`00`, número que nenhuma legenda tem). O
+`og.png` seguiu o mesmo caminho: cinza, com `00` nos exemplos.
 
 ## 59.7. Fotos — locais, todas as 19.830
 
@@ -1729,6 +1808,30 @@ padding → texto auxiliar → header → dígitos.
 Os rótulos de cargo aparecem abreviados no card (`DEP. ESTADUAL`, `1º SENADOR`)
 porque o espaço é disputado com o número; o nome completo permanece nos rótulos
 de acessibilidade.
+
+### Dígitos: casinha permanente (recusa consciente do §30)
+
+O §30 recomenda uma evolução visual: com o card em repouso, o número viraria um
+bloco tipográfico único, "reduzindo a aparência de múltiplos inputs", voltando a
+casinhas ao toque. Isso foi implementado e **desfeito**.
+
+Dois motivos:
+
+- **Afordância.** Sem a casinha, o número não se anuncia como campo. O produto
+  todo é editar seis números; esconder que eles são editáveis contraria o
+  objetivo antes de ganhar estética.
+- **Troca de aparência.** O número mudava de forma entre repouso e edição, o que
+  chama mais atenção do que o ganho de acabamento justifica.
+
+Hoje a casinha é permanente e o foco só intensifica o que já está lá: a tinta do
+fundo sobe de 8% para 13% e o dígito corrente é preenchido com a cor cheia do
+partido. **Nenhuma mudança de geometria** — a suíte compara largura, posição e
+gap de cada dígito antes e depois de focar, porque o §29 proíbe deslocamento.
+
+Efeito colateral que teve de ser pago: casinha separada ocupa mais largura que o
+bloco colapsado, e nomes médios como `CELSO RUSSOMANNO` passaram a quebrar em
+duas linhas. O orçamento de largura do número caiu de 33cqw para 31cqw e
+devolveu a linha.
 
 ### Nome de urna: inteiro, sem abreviar
 
@@ -1862,6 +1965,14 @@ O `<select>` nativo foi trocado por um seletor próprio: no cabeçalho fica apen
 **bandeira + sigla**; tocar abre um diálogo com **bandeira, nome por extenso e
 sigla** das 27 UFs, com o estado atual destacado.
 
+O botão é dividido em duas metades exatas — bandeira à esquerda, sigla centrada
+à direita — e tem a **mesma altura do botão de compartilhar**, que virou
+quadrado arredondado para os dois formarem um par. Nenhum contorno: usa o
+material dos cards (preenchimento claro, raio pequeno da mesma família, sombra
+suave). Um pill arredondadíssimo com traço preto grosso destoava dos cards e,
+sendo contorno, contrariava o §31; a versão atual parece clicável sem brigar com
+os números, que devem ser o elemento mais alto da tela (§56).
+
 Isso tensiona o §2.1 ("evitar modais desnecessários"). O julgamento aqui é que um
 seletor de 27 itens com bandeira não é um modal desnecessário: é o próprio
 controle, e sem ele o cabeçalho carregaria uma lista impossível de estilizar.
@@ -1918,7 +2029,7 @@ um arquivo `CNAME` com `santinho.art` e aponte o DNS.
 
 ## 59.12. Verificação
 
-`tests/interacao.mjs` — **268 asserções passando**, cobrindo os §48/§50 e mais.
+`tests/interacao.mjs` — **286 asserções passando**, cobrindo os §48/§50 e mais.
 A suíte sobe o servidor estático, acha o Chrome e dirige um navegador de verdade.
 Ela serve `tests/fixtures/data` (base fictícia fixa), **não** `data/`: atualizar
 a base real do TSE não pode quebrar teste.
@@ -1948,6 +2059,10 @@ O que ela verifica:
 - sigla de partido longa (`SOLIDARIEDADE-DEMO`): selo inteiro e cargo preservado;
 - foto: placeholder `?` escondido quando há foto, visível quando não há, e foto
   quebrada voltando ao placeholder;
+- cor do partido: cor oficial quando conhecida, hash quando não, e razão de
+  contraste WCAG medida (≥ 4,5:1) para selo e número, em cor escura e clara;
+- dígitos: casinha visível em repouso, dígitos separados (não é bloco único), e
+  largura/posição/gap idênticos antes e depois de focar;
 - seletor de estado: diálogo fechado ao abrir a página e sem as 27 bandeiras
   carregadas, abertura marcando o estado atual e levando o foco a ele, bandeira
   e nome corretos por opção, setas/`Home`/letra/`Esc`, foco voltando ao gatilho,

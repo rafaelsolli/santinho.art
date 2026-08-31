@@ -9,7 +9,8 @@
     "update-data": "node scripts/update-data.mjs",
     "serve": "python3 -m http.server 8080",
     "test": "node tests/interacao.mjs",
-    "update-flags": "node scripts/update-flags.mjs"
+    "update-flags": "node scripts/update-flags.mjs",
+    "update-colors": "node scripts/update-party-colors.mjs"
   },
   "engines": {
     "node": ">=20"

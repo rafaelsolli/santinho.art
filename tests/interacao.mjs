@@ -468,6 +468,98 @@ eq('aviso sai depois de carregar', await page.$eval('#status', e => e.textConten
 page.off('request', atrasar);
 await page.setRequestInterception(false);
 
+/* -------------------------------- casinha permanente nos dígitos (contra §30) */
+console.log('\n== dígitos: casinha permanente, sem trocar de aparência ao focar');
+await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+await page.goto(BASE + '?uf=sp&df=1313&g=13', { waitUntil: 'networkidle0' });
+await sleep(250);
+const medirDigitos = () => page.evaluate(() => {
+  const cells = [...document.querySelectorAll('.card[data-cargo="df"] .digit')];
+  const est = cells.map(c => getComputedStyle(c));
+  const caixa = cells.map(c => c.getBoundingClientRect());
+  return {
+    comFundo: est.every(e => e.backgroundColor !== 'rgba(0, 0, 0, 0)'),
+    comBorda: est.every(e => e.boxShadow !== 'none'),
+    larguras: caixa.map(r => +r.width.toFixed(1)),
+    esquerdas: caixa.map(r => +r.x.toFixed(1)),
+    gap: getComputedStyle(document.querySelector('.card[data-cargo="df"] .digits')).columnGap,
+  };
+});
+const emRepouso = await medirDigitos();
+ok('casinha visível sem foco', emRepouso.comFundo && emRepouso.comBorda);
+ok('dígitos separados sem foco (não é bloco único)', emRepouso.gap !== '0px' && emRepouso.gap !== 'normal',
+   '(gap ' + emRepouso.gap + ')');
+await page.click('.card[data-cargo="df"] .digit[data-index="1"]');
+await sleep(200);
+const emEdicao = await medirDigitos();
+eq('larguras não mudam ao focar', emEdicao.larguras, emRepouso.larguras);
+eq('posições não mudam ao focar', emEdicao.esquerdas, emRepouso.esquerdas);
+eq('gap não muda ao focar', emEdicao.gap, emRepouso.gap);
+ok('casinha continua visível em edição', emEdicao.comFundo && emEdicao.comBorda);
+ok('dígito em foco fica preenchido com a cor do partido', await page.evaluate(() => {
+  const c = document.querySelector('.card[data-cargo="df"] .digit.is-caret');
+  const fundo = getComputedStyle(c).backgroundColor;
+  const cor = document.querySelector('.card[data-cargo="df"]').style.getPropertyValue('--c').trim();
+  const n = parseInt(cor.replace('#', ''), 16);
+  const esperado = 'rgb(' + [(n >> 16) & 255, (n >> 8) & 255, n & 255].join(', ') + ')';
+  return fundo === esperado;
+}));
+eq('sem bloco diagonal atrás do número', await page.evaluate(() => {
+  const n = document.querySelector('.card[data-cargo="df"] .numwrap');
+  return getComputedStyle(n, '::before').content;
+}), 'none');
+
+/* -------------------------------------------------- cor do partido (§16, §46) */
+console.log('\n== cor do partido: oficial quando conhecida, contraste garantido');
+await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+await page.goto(BASE + '?uf=sp&df=1313&g=45&s1=999', { waitUntil: 'networkidle0' });
+await sleep(300);
+const cores = await page.evaluate(() => {
+  const ler = k => {
+    const c = document.querySelector('.card[data-cargo="' + k + '"]');
+    const selo = c.querySelector('.party');
+    const digito = c.querySelector('.digit');
+    return { c: c.style.getPropertyValue('--c').trim(),
+             oficial: c.dataset.corOficial,
+             corSelo: getComputedStyle(selo).color,
+             fundoSelo: getComputedStyle(selo).backgroundColor,
+             corDigito: getComputedStyle(digito).color };
+  };
+  return { fut: ler('df'), lum: ler('g'), invalido: ler('s1') };
+});
+eq('usa a cor oficial da sigla (FUT)', cores.fut.c, '#DA1208');
+eq('marcado como cor oficial', cores.fut.oficial, '1');
+eq('cor escura sem sigla conhecida cai no hash', cores.invalido.oficial, '0');
+eq('cor clara (LUM #FFEE57) usa a cor oficial', cores.lum.c, '#FFEE57');
+
+/* contraste: texto sobre o selo tem de ser claro na cor escura e escuro na clara */
+const luminancia = cor => {
+  const [r, g, b] = cor.match(/\d+/g).map(Number);
+  const lin = v => { const s = v / 255; return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+};
+const razao = (a, b) => {
+  const [x, y] = [luminancia(a), luminancia(b)].sort((m, n) => n - m);
+  return (x + 0.05) / (y + 0.05);
+};
+ok('selo em cor escura: texto claro', luminancia(cores.fut.corSelo) > 0.5,
+   '(' + cores.fut.corSelo + ' sobre ' + cores.fut.fundoSelo + ')');
+ok('selo em cor clara: texto escuro', luminancia(cores.lum.corSelo) < 0.2,
+   '(' + cores.lum.corSelo + ' sobre ' + cores.lum.fundoSelo + ')');
+ok('contraste do selo >= 4.5:1 na cor escura',
+   razao(cores.fut.corSelo, cores.fut.fundoSelo) >= 4.5,
+   '(' + razao(cores.fut.corSelo, cores.fut.fundoSelo).toFixed(2) + ':1)');
+ok('contraste do selo >= 4.5:1 na cor clara',
+   razao(cores.lum.corSelo, cores.lum.fundoSelo) >= 4.5,
+   '(' + razao(cores.lum.corSelo, cores.lum.fundoSelo).toFixed(2) + ':1)');
+const fundoCard = await page.$eval('.card[data-cargo="g"]', e => getComputedStyle(e).backgroundColor);
+ok('numero em cor clara ainda contrasta com o card',
+   razao(cores.lum.corDigito, fundoCard) >= 4.5,
+   '(' + razao(cores.lum.corDigito, fundoCard).toFixed(2) + ':1, ' + cores.lum.corDigito + ')');
+ok('numero em cor escura contrasta com o card',
+   razao(cores.fut.corDigito, fundoCard) >= 4.5,
+   '(' + razao(cores.fut.corDigito, fundoCard).toFixed(2) + ':1)');
+
 /* ------------------------------------------- seletor de UF (bandeira + sigla) */
 console.log('\n== seletor de UF: diálogo com bandeira, nome e sigla');
 await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });

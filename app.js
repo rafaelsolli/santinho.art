@@ -69,10 +69,12 @@ const SITUACOES_EXIBIVEIS = new Set(['A', 'N']);
 /* hosts autorizados para foto (§38) — nada fora daqui é carregado */
 const FOTO_HOSTS = new Set(['divulgacandcontas.tse.jus.br', 'cdn.tse.jus.br']);
 
-/* paleta fixa, escolhida por hash da sigla (§16). Não é a cor real de nenhum
- * partido: é justamente o que mantém a neutralidade exigida pelo §46. */
-const PALETA = ['#c81d25','#1d4ed8','#0f8a5f','#c96a06','#7a1fa2',
-                '#06799f','#b01b6e','#2f7d32','#2e3a8c','#c2185b'];
+/* Cor do partido (§16, primeira opção da lista: "derivada do partido").
+ * Vem de data/cores-partidos.json, gerado de uma fonte citável (Wikidata P465)
+ * por scripts/update-party-colors.mjs. Sigla sem cor conhecida cai na paleta
+ * por hash abaixo — nenhuma legenda fica sem identidade nem ganha destaque. */
+const PALETA = ['#8b8d94','#6b6d73','#5a5c62','#7d7f86','#4a4c52',
+                '#9a9ca2','#63656b','#74767d','#53555b','#84868d'];
 
 /* ------------------------------------------------------------------ estado */
 
@@ -85,6 +87,7 @@ const state = {
 const bases = new Map();     // 'SP' | 'BR' -> { status, cargos, partidos }
 const carregando = new Map();
 let meta = null;
+let coresDePartido = {};     // sigla -> 'rrggbb'
 
 const els = {
   cards:     document.getElementById('cards'),
@@ -137,6 +140,13 @@ function carregarMeta() {
     .then(r => (r.ok ? r.json() : null))
     .catch(() => null)
     .then(json => { meta = json; return json; });
+}
+
+function carregarCores() {
+  return fetch('data/cores-partidos.json')
+    .then(r => (r.ok ? r.json() : null))
+    .catch(() => null)
+    .then(json => { coresDePartido = (json && json.cores) || {}; return json; });
 }
 
 function candidaturaExibivel(candidate) {
@@ -199,11 +209,62 @@ function fotoUrlSegura(url) {
   } catch (_) { return null; }
 }
 
-function corDoPartido(sigla) {
-  if (!sigla) return null;
+function corPorHash(sigla) {
   let h = 0;
   for (let i = 0; i < sigla.length; i++) h = (h * 31 + sigla.charCodeAt(i)) >>> 0;
   return PALETA[h % PALETA.length];
+}
+
+const canais = hex => {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+const hexDe = ([r, g, b]) => '#' + [r, g, b]
+  .map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+
+/* luminância relativa (WCAG) */
+function luminancia([r, g, b]) {
+  const lin = v => {
+    const s = v / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/* Cor real inclui amarelo (PSOL) e azul-claro (Republicanos): texto branco em
+ * cima seria ilegível, e o número precisa contrastar com o card quase branco.
+ * Daí duas variantes derivadas de cada cor, calculadas uma vez por sigla. */
+const LUM_TEXTO_CLARO = 0.42;   // acima disto, texto escuro sobre a cor
+const LUM_MAX_NO_CARD = 0.17;   // ~4,5:1 contra o creme claro do card
+
+function escurecerAte(rgb, alvo) {
+  let atual = rgb.slice();
+  for (let i = 0; i < 24 && luminancia(atual) > alvo; i++) atual = atual.map(v => v * 0.9);
+  return atual;
+}
+
+const cacheDeCor = new Map();
+
+function paletaDoPartido(sigla) {
+  if (!sigla) return null;
+  if (cacheDeCor.has(sigla)) return cacheDeCor.get(sigla);
+
+  const oficial = coresDePartido[sigla];
+  const base = /^#?[0-9a-fA-F]{6}$/.test(oficial || '')
+    ? '#' + String(oficial).replace('#', '')
+    : corPorHash(sigla);
+
+  const rgb = canais(base);
+  const paleta = {
+    cor: base,
+    /* texto sobre a cor cheia (selo do partido, dígito em foco) */
+    texto: luminancia(rgb) > LUM_TEXTO_CLARO ? 'var(--ink)' : 'var(--card)',
+    /* cor escurecida o suficiente para ler sobre o card */
+    escura: hexDe(escurecerAte(rgb, LUM_MAX_NO_CARD)),
+    oficial: Boolean(oficial),
+  };
+  cacheDeCor.set(sigla, paleta);
+  return paleta;
 }
 
 /* nome completo do cargo — usado nos rótulos de acessibilidade */
@@ -674,7 +735,11 @@ function renderCard(cargo) {
   const digits = state.votes[cargo.key];
   const focado = !!state.focus && state.focus.key === cargo.key;
 
-  el.card.style.setProperty('--c', corDoPartido(r.party) || 'var(--neutral)');
+  const paleta = paletaDoPartido(r.party);
+  el.card.style.setProperty('--c', paleta ? paleta.cor : 'var(--neutral)');
+  el.card.style.setProperty('--c-txt', paleta ? paleta.texto : 'var(--card)');
+  el.card.style.setProperty('--c-escura', paleta ? paleta.escura : 'var(--ink-soft)');
+  el.card.dataset.corOficial = paleta && paleta.oficial ? '1' : '0';
   el.card.classList.toggle('is-focused', focado);
   el.card.dataset.estado = r.estado;
 
@@ -796,7 +861,7 @@ function trocarUf(novaUf) {
   if (base && base.status === 'error') bases.delete(state.uf);
   const carregamento = loadElectionData(state.uf);
   atualizarStatus();
-  carregamento.then(() => { renderAll(); atualizarStatus(); });
+  carregamento.then(() => { cacheDeCor.clear(); renderAll(); atualizarStatus(); });
 }
 
 function observarTecladoVirtual() {
@@ -821,9 +886,9 @@ function init() {
   observarTecladoVirtual();
 
   const carregamento = Promise.all(
-    [carregarMeta(), loadElectionData('BR'), loadElectionData(state.uf)]);
+    [carregarMeta(), carregarCores(), loadElectionData('BR'), loadElectionData(state.uf)]);
   atualizarStatus();                  // já com as requisições na fila (§43)
-  carregamento.then(() => { renderAll(); atualizarStatus(); });
+  carregamento.then(() => { cacheDeCor.clear(); renderAll(); atualizarStatus(); });
 }
 
 init();
