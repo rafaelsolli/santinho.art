@@ -1,0 +1,15 @@
+{
+  "uf": "BR",
+  "partidos": {
+    "13": { "sigla": "FUT" },
+    "31": { "sigla": "ARC" },
+    "45": { "sigla": "LUM" }
+  },
+  "cargos": {
+    "p": {
+      "13": { "n": "PRES EXEMPLO A", "p": "FUT", "sq": "990000001", "sit": "A", "foto": "data/photos/exemplo-1.svg" },
+      "31": { "n": "PRES DEMO B",    "p": "ARC", "sq": "990000002", "sit": "A" },
+      "45": { "n": "PRES TESTE C",   "p": "LUM", "sq": "990000003", "sit": "A" }
+    }
+  }
+}

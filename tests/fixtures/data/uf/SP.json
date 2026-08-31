@@ -1,0 +1,146 @@
+{
+  "uf": "SP",
+  "partidos": {
+    "13": {
+      "sigla": "FUT"
+    },
+    "31": {
+      "sigla": "ARC"
+    },
+    "45": {
+      "sigla": "SOLIDARIEDADE-DEMO"
+    },
+    "27": {
+      "sigla": "VER"
+    }
+  },
+  "cargos": {
+    "df": {
+      "1313": {
+        "n": "MAYA EXEMPLO",
+        "p": "FUT",
+        "sq": "900000001",
+        "sit": "A",
+        "foto": "data/photos/exemplo-1.svg"
+      },
+      "1340": {
+        "n": "TIAO DEMO",
+        "p": "FUT",
+        "sq": "900000002",
+        "sit": "A"
+      },
+      "3121": {
+        "n": "BIA FICTICIA",
+        "p": "ARC",
+        "sq": "900000003",
+        "sit": "A",
+        "foto": "data/photos/exemplo-2.svg"
+      },
+      "4507": {
+        "n": "NEIDE TESTE",
+        "p": "LUM",
+        "sq": "900000004",
+        "sit": "A"
+      },
+      "1399": {
+        "n": "CAND INAPTO DEMO",
+        "p": "FUT",
+        "sq": "900000005",
+        "sit": "X"
+      },
+      "1777": {
+        "n": "MARIA DE EXEMPLO SOBRENOME DEMO",
+        "p": "FUT",
+        "sq": "900000006",
+        "sit": "A"
+      },
+      "1778": {
+        "n": "VETERINARIA MARLENE DEMONSTRA",
+        "p": "LUM",
+        "sq": "900000007",
+        "sit": "A"
+      },
+      "1779": {
+        "n": "ZE - TELMO EXEMPLIFICADOR DEMO",
+        "p": "FUT",
+        "sq": "900000008",
+        "sit": "A"
+      }
+    },
+    "de": {
+      "13131": {
+        "n": "JOAO EXEMPLO",
+        "p": "FUT",
+        "sq": "900000011",
+        "sit": "A",
+        "foto": "data/photos/exemplo-3.svg"
+      },
+      "31200": {
+        "n": "CLARA DEMO",
+        "p": "ARC",
+        "sq": "900000012",
+        "sit": "A"
+      },
+      "45123": {
+        "n": "OTAVIO TESTE",
+        "p": "SOLIDARIEDADE-DEMO",
+        "sq": "900000013",
+        "sit": "A"
+      },
+      "27001": {
+        "n": "SIMONE DEMO",
+        "p": "VER",
+        "sq": "900000014",
+        "sit": "A"
+      }
+    },
+    "s": {
+      "131": {
+        "n": "RUTE EXEMPLO",
+        "p": "FUT",
+        "sq": "900000021",
+        "sit": "A",
+        "foto": "data/photos/exemplo-2.svg"
+      },
+      "132": {
+        "n": "IVO DEMO",
+        "p": "FUT",
+        "sq": "900000022",
+        "sit": "A"
+      },
+      "313": {
+        "n": "LEDA FICTICIA",
+        "p": "ARC",
+        "sq": "900000023",
+        "sit": "A"
+      },
+      "450": {
+        "n": "HELIO TESTE",
+        "p": "LUM",
+        "sq": "900000024",
+        "sit": "A"
+      }
+    },
+    "g": {
+      "13": {
+        "n": "AGDA EXEMPLO",
+        "p": "FUT",
+        "sq": "900000031",
+        "sit": "A",
+        "foto": "data/photos/exemplo-1.svg"
+      },
+      "31": {
+        "n": "PEDRO DEMO",
+        "p": "ARC",
+        "sq": "900000032",
+        "sit": "A"
+      },
+      "45": {
+        "n": "SONIA TESTE",
+        "p": "LUM",
+        "sq": "900000033",
+        "sit": "A"
+      }
+    }
+  }
+}

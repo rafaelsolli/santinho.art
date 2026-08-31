@@ -1,0 +1,6 @@
+{
+  "ano": 2026,
+  "fonte": "MOCK",
+  "atualizadoEm": "2026-08-31T00:00:00Z",
+  "observacao": "Base de exemplo, ficticia, apenas para desenvolvimento. Substituida por scripts/update-data.mjs com dados oficiais do TSE."
+}

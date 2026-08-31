@@ -1,0 +1,19 @@
+{
+  "name": "santinho-art",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cola eleitoral digital para as eleições brasileiras de 2026. Site estático, sem dependências em produção.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "update-data": "node scripts/update-data.mjs",
+    "serve": "python3 -m http.server 8080",
+    "test": "node tests/interacao.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}

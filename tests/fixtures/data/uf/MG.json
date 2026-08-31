@@ -1,0 +1,27 @@
+{
+  "uf": "MG",
+  "partidos": {
+    "13": { "sigla": "FUT" },
+    "31": { "sigla": "ARC" },
+    "45": { "sigla": "LUM" }
+  },
+  "cargos": {
+    "df": {
+      "1313": { "n": "MAYA RIBEIRO DEMO", "p": "FUT", "sq": "910000001", "sit": "A", "foto": "data/photos/exemplo-3.svg" },
+      "3110": { "n": "ARY FICTICIO",      "p": "ARC", "sq": "910000002", "sit": "A" }
+    },
+    "de": {
+      "13131": { "n": "GILDA EXEMPLO", "p": "FUT", "sq": "910000011", "sit": "A" },
+      "45900": { "n": "NILO DEMO",     "p": "LUM", "sq": "910000012", "sit": "A" }
+    },
+    "s": {
+      "131": { "n": "TEREZA DEMO",  "p": "FUT", "sq": "910000021", "sit": "A" },
+      "132": { "n": "AMIR TESTE",   "p": "FUT", "sq": "910000022", "sit": "A" },
+      "310": { "n": "LUA FICTICIA", "p": "ARC", "sq": "910000023", "sit": "A" }
+    },
+    "g": {
+      "13": { "n": "OSMAR EXEMPLO", "p": "FUT", "sq": "910000031", "sit": "A" },
+      "45": { "n": "IARA DEMO",     "p": "LUM", "sq": "910000032", "sit": "A" }
+    }
+  }
+}
