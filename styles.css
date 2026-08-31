@@ -821,7 +821,7 @@ body.has-status .tagline { display: none; }
   transition: background .12s ease, color .12s ease, box-shadow .12s ease;
 }
 .digit.is-empty { color: color-mix(in srgb, var(--neutral) 60%, transparent); }
-.digit.is-empty::after { content: "–"; }
+.digit.is-empty::after { content: "-"; }
 
 /* separador pontilhado depois dos dois dígitos do partido (§20) */
 .digit.after-party { margin-left: .2em; }

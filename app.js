@@ -140,7 +140,7 @@ function loadElectionData(escopo) {
       partidos: json.partidos || {},
     }))
     .catch(err => {
-      console.warn('santinho.art: base', escopo, 'indisponível —', err.message);
+      console.warn('santinho.art: base', escopo, 'indisponível -', err.message);
       return { status: 'error', cargos: {}, partidos: {} };
     })
     .then(base => {
@@ -352,7 +352,7 @@ function renderGatilhoUf() {
   els.ufSigla.textContent = state.uf;
   /* o rótulo visível da placa é a sigla, então ela entra no nome acessível
    * (WCAG 2.5.3); o botão do rodapé mostra "trocar estado" */
-  els.ufPlaca.setAttribute('aria-label', 'Estado: ' + state.uf + ' — ' + nome + '. Trocar estado');
+  els.ufPlaca.setAttribute('aria-label', 'Estado: ' + state.uf + ' - ' + nome + '. Trocar estado');
   els.ufTrigger.setAttribute('aria-label', 'Trocar estado, hoje ' + nome);
 }
 
@@ -819,6 +819,7 @@ function depoisDeEditar(cargo) {
   renderAll();
   syncSink(cargo);
   syncUrl();
+  agendarImagem();
 }
 
 /* ------------------------------------------------------------------- URL */
@@ -1020,6 +1021,7 @@ function preencherNumero(key, numero) {
   renderAll();
   syncSink(cargo);
   syncUrl();
+  agendarImagem();
 }
 
 function linhaDeResultado(item) {
@@ -1225,7 +1227,7 @@ const TAGS = {
   parcial:       { texto: 'INVÁLIDO', tipo: 'invalido' },
   invalido:      { texto: 'INVÁLIDO', tipo: 'invalido' },
   legenda:       { texto: 'VOTO DE LEGENDA', tipo: 'legenda' },
-  indeterminado: { texto: '—', tipo: 'neutro' },
+  indeterminado: { texto: '-', tipo: 'neutro' },
 };
 
 function renderCard(cargo) {
@@ -1306,7 +1308,7 @@ function atualizarStatus() {
     els.status.textContent = 'Não foi possível validar os candidatos agora.';
     els.status.dataset.kind = 'warn';
   } else if (meta && meta.fonte && meta.fonte !== 'TSE') {
-    els.status.textContent = 'dados de exemplo — base não oficial (' + meta.fonte + ')';
+    els.status.textContent = 'dados de exemplo - base não oficial (' + meta.fonte + ')';
     els.status.dataset.kind = 'warn';
   } else {
     els.status.textContent = '';
@@ -1323,24 +1325,402 @@ function toast(msg) {
   toastTimer = setTimeout(() => { els.toast.hidden = true; }, 2200);
 }
 
+/* ------------------------------------------------------- cola em texto (§5) */
+
+/* Texto para colar em conversa: cargo, número, nome e partido de cada voto.
+ * Sem alinhamento por espaços — a fonte de aplicativo de mensagem é
+ * proporcional e o alinhamento não sobreviveria; separador dá conta. */
+function textoDaCola() {
+  const linhas = [];
+  for (const cargo of CARGOS) {
+    const digits = state.votes[cargo.key];
+    if (digits.every(d => d === null)) continue;
+
+    const numero = codificarVoto(digits);
+    const r = resolveCandidate(cargo);
+    let quem = '';
+    if (r.estado === 'valido') quem = r.nome + ' (' + r.party + ')';
+    else if (r.estado === 'legenda') quem = 'voto de legenda - ' + r.party;
+    else if (r.estado === 'invalido') quem = 'número não encontrado';
+
+    linhas.push(nomeCurtoDoCargo(cargo).toUpperCase() + ' · ' + numero +
+                (quem ? ' · ' + quem : ''));
+  }
+  if (!linhas.length) return null;
+
+  const nomeUf = NOME_DA_UF.get(state.uf) || state.uf;
+  return 'minha cola eleitoral 2026 - ' + nomeUf + ' (' + state.uf + ')\n\n' +
+         linhas.join('\n');
+}
+
+/* -------------------------------------------------------- imagem do santinho */
+
+/* Desenha a cola num canvas e devolve um PNG. Sem biblioteca: o layout é
+ * reescrito aqui em 2D, o que dá controle total e mantém o site sem dependência
+ * (§36). Tudo é do mesmo domínio, então o canvas não fica "tainted" e toBlob
+ * funciona (§38). */
+const IMG_LARGURA = 1080;
+const IMG_MARGEM = 40;
+const IMG_CARTAO_H = 208;
+const IMG_ESPACO = 18;
+const IMG_CABECALHO = 132;
+const FAMILIA = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+
+function carregarImagem(src) {
+  return new Promise(resolve => {
+    if (!src) { resolve(null); return; }
+    const img = new Image();
+    img.decoding = 'sync';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+function caminhoArredondado(ctx, x, y, w, h, r) {
+  const raio = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + raio, y);
+  ctx.arcTo(x + w, y, x + w, y + h, raio);
+  ctx.arcTo(x + w, y + h, x, y + h, raio);
+  ctx.arcTo(x, y + h, x, y, raio);
+  ctx.arcTo(x, y, x + w, y, raio);
+  ctx.closePath();
+}
+
+/* quebra o nome em até duas linhas, como no card */
+function quebrarEmDuas(ctx, texto, largura) {
+  if (ctx.measureText(texto).width <= largura) return [texto];
+  const palavras = texto.split(' ');
+  let melhor = [texto, ''];
+  for (let i = 1; i < palavras.length; i++) {
+    const a = palavras.slice(0, i).join(' ');
+    const b = palavras.slice(i).join(' ');
+    const pior = Math.max(ctx.measureText(a).width, ctx.measureText(b).width);
+    if (pior < Math.max(ctx.measureText(melhor[0]).width, ctx.measureText(melhor[1]).width)) {
+      melhor = [a, b];
+    }
+  }
+  return melhor;
+}
+
+function desenharCartao(ctx, x, y, w, h, cargo, foto) {
+  const r = resolveCandidate(cargo);
+  const paleta = paletaDoPartido(r.party);
+  const cor = paleta ? paleta.cor : '#9a9ca2';
+  const corEscura = paleta ? paleta.escura : '#4b4d52';
+  const corTexto = paleta && paleta.texto === 'var(--ink)' ? '#17181b' : '#fbfbfc';
+  const raio = 18;
+
+  /* cartão */
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,.18)';
+  ctx.shadowBlur = 14;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = '#fbfbfc';
+  caminhoArredondado(ctx, x, y, w, h, raio);
+  ctx.fill();
+  ctx.restore();
+
+  /* faixa com recorte diagonal */
+  const fotoH = h * 0.78;
+  const fotoW = fotoH * 0.75;
+  const fotoX = x + 22;
+  const fotoY = y + (h - fotoH) / 2;
+  const faixaW = 22 + fotoW + 52;
+  ctx.save();
+  caminhoArredondado(ctx, x, y, w, h, raio);
+  ctx.clip();
+  const grad = ctx.createLinearGradient(x, y, x + faixaW, y + h);
+  grad.addColorStop(0, cor);
+  grad.addColorStop(1, corEscura);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + faixaW, y);
+  ctx.lineTo(x + faixaW * 0.58, y + h);
+  ctx.lineTo(x, y + h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  /* foto (ou placeholder) */
+  ctx.save();
+  caminhoArredondado(ctx, fotoX, fotoY, fotoW, fotoH, 10);
+  ctx.clip();
+  ctx.fillStyle = '#e6e6e9';
+  ctx.fillRect(fotoX, fotoY, fotoW, fotoH);
+  if (foto) {
+    const escala = Math.max(fotoW / foto.naturalWidth, fotoH / foto.naturalHeight);
+    const lw = foto.naturalWidth * escala;
+    const lh = foto.naturalHeight * escala;
+    ctx.drawImage(foto, fotoX + (fotoW - lw) / 2, fotoY + (fotoH - lh) * 0.22, lw, lh);
+  } else {
+    ctx.fillStyle = '#b9bbc0';
+    ctx.font = '700 ' + Math.round(fotoH * 0.42) + 'px ' + FAMILIA;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('?', fotoX + fotoW / 2, fotoY + fotoH / 2);
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,.95)';
+  ctx.lineWidth = 5;
+  caminhoArredondado(ctx, fotoX, fotoY, fotoW, fotoH, 10);
+  ctx.stroke();
+  ctx.restore();
+
+  /* número, da direita para a esquerda */
+  const digits = state.votes[cargo.key];
+  const numTamanho = Math.round(h * 0.42);
+  ctx.font = '800 ' + numTamanho + 'px ' + FAMILIA;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const celulaW = numTamanho * 0.74;
+  const separador = cargo.legenda ? numTamanho * 0.22 : 0;
+  const numW = celulaW * cargo.len + separador;
+  const numX = x + w - 26 - numW;
+  const meioY = y + h / 2;
+  for (let i = 0; i < cargo.len; i++) {
+    const cx = numX + celulaW * i + celulaW / 2 + (cargo.legenda && i >= 2 ? separador : 0);
+    ctx.fillStyle = 'rgba(0,0,0,.045)';
+    caminhoArredondado(ctx, cx - celulaW / 2 + 3, meioY - numTamanho * 0.62,
+                       celulaW - 6, numTamanho * 1.24, 6);
+    ctx.fill();
+    ctx.fillStyle = digits[i] === null ? '#c2c4c9' : corEscura;
+    ctx.fillText(digits[i] === null ? '-' : digits[i], cx, meioY + 2);
+  }
+  if (cargo.legenda) {
+    const sepX = numX + celulaW * 2 + separador / 2;
+    ctx.save();
+    ctx.strokeStyle = '#c2c4c9';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([5, 7]);
+    ctx.beginPath();
+    ctx.moveTo(sepX, meioY - numTamanho * 0.5);
+    ctx.lineTo(sepX, meioY + numTamanho * 0.5);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /* identidade */
+  const identX = fotoX + fotoW + 34;
+  const identW = numX - identX - 24;
+  ctx.textAlign = 'left';
+
+  const cargoTexto = nomeCurtoDoCargo(cargo).toUpperCase();
+  const nomeTamanho = 40;
+  const seloAltura = 34;
+
+  if (r.estado === 'valido') {
+    ctx.fillStyle = '#17181b';
+    ctx.font = '800 ' + nomeTamanho + 'px ' + FAMILIA;
+    const linhas = quebrarEmDuas(ctx, r.nome.toUpperCase(), identW);
+    const alturaBloco = linhas.length * nomeTamanho * 1.06 + 12 + seloAltura;
+    let ly = meioY - alturaBloco / 2 + nomeTamanho * 0.55;
+    for (const linha of linhas) {
+      ctx.fillText(linha, identX, ly);
+      ly += nomeTamanho * 1.06;
+    }
+    desenharSeloECargo(ctx, identX, ly + 6, r.party, cargoTexto, cor, corTexto, seloAltura);
+  } else {
+    const tag = r.estado === 'legenda' ? 'VOTO DE LEGENDA'
+              : r.estado === 'indeterminado' ? '-' : 'INVÁLIDO';
+    const alturaBloco = seloAltura + 12 + seloAltura;
+    let ly = meioY - alturaBloco / 2;
+    ctx.font = '800 26px ' + FAMILIA;
+    const tagW = ctx.measureText(tag).width + 28;
+    const tagCor = r.estado === 'legenda' ? cor : '#9a9ca2';
+    ctx.fillStyle = 'rgba(0,0,0,.06)';
+    caminhoArredondado(ctx, identX, ly, tagW, seloAltura, 5);
+    ctx.fill();
+    ctx.fillStyle = r.estado === 'legenda' ? corEscura : '#6b6d73';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(tag, identX + 14, ly + seloAltura / 2 + 1);
+    desenharSeloECargo(ctx, identX, ly + seloAltura + 12 + seloAltura / 2,
+                       r.estado === 'legenda' ? r.party : '', cargoTexto,
+                       tagCor, corTexto, seloAltura);
+  }
+}
+
+function desenharSeloECargo(ctx, x, meio, sigla, cargoTexto, cor, corTexto, altura) {
+  ctx.textBaseline = 'middle';
+  let cursor = x;
+  if (sigla) {
+    ctx.font = '800 24px ' + FAMILIA;
+    const w = ctx.measureText(sigla).width + 26;
+    ctx.fillStyle = cor;
+    caminhoArredondado(ctx, cursor, meio - altura / 2, w, altura, 5);
+    ctx.fill();
+    ctx.fillStyle = corTexto;
+    ctx.fillText(sigla, cursor + 13, meio + 1);
+    cursor += w + 14;
+  }
+  ctx.font = '700 22px ' + FAMILIA;
+  ctx.fillStyle = '#6b6d73';
+  ctx.fillText(cargoTexto, cursor, meio + 1);
+}
+
+async function gerarImagem() {
+  const altura = IMG_CABECALHO + CARGOS.length * IMG_CARTAO_H +
+                 (CARGOS.length - 1) * IMG_ESPACO + IMG_MARGEM;
+  const canvas = document.createElement('canvas');
+  canvas.width = IMG_LARGURA;
+  canvas.height = altura;
+  const ctx = canvas.getContext('2d');
+
+  /* fundo */
+  ctx.fillStyle = '#ececee';
+  ctx.fillRect(0, 0, IMG_LARGURA, altura);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,.016)';
+  ctx.lineWidth = 3;
+  for (let i = -altura; i < IMG_LARGURA; i += 10) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i + altura, altura);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  /* cabeçalho: marca, bandeira e sigla */
+  const [bandeira, ...fotos] = await Promise.all([
+    carregarImagem(bandeiraDaUf(state.uf)),
+    ...CARGOS.map(cargo => {
+      const r = resolveCandidate(cargo);
+      const url = r.estado === 'valido' ? fotoUrlSegura(r.foto) : null;
+      return carregarImagem(url);
+    }),
+  ]);
+
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const baseY = IMG_MARGEM + 34;
+  ctx.font = '800 54px ' + FAMILIA;
+  ctx.fillStyle = '#17181b';
+  ctx.fillText('santinho', IMG_MARGEM, baseY);
+  const marcaW = ctx.measureText('santinho').width;
+  ctx.fillStyle = '#6b6d73';
+  ctx.fillText('.art', IMG_MARGEM + marcaW, baseY);
+
+  if (bandeira) {
+    const bh = 40;
+    const bw = bh * 10 / 7;
+    const bx = IMG_LARGURA - IMG_MARGEM - bw - 76;
+    ctx.save();
+    caminhoArredondado(ctx, bx, baseY - bh / 2, bw, bh, 4);
+    ctx.clip();
+    ctx.drawImage(bandeira, bx, baseY - bh / 2, bw, bh);
+    ctx.restore();
+    ctx.font = '800 34px ' + FAMILIA;
+    ctx.fillStyle = '#17181b';
+    ctx.fillText(state.uf, bx + bw + 12, baseY + 1);
+  }
+
+  ctx.font = '600 26px ' + FAMILIA;
+  ctx.fillStyle = '#6b6d73';
+  ctx.fillText('nada impresso: nem voto, nem santinho', IMG_MARGEM, baseY + 44);
+
+  /* cartões */
+  const largura = IMG_LARGURA - IMG_MARGEM * 2;
+  CARGOS.forEach((cargo, i) => {
+    const y = IMG_CABECALHO + i * (IMG_CARTAO_H + IMG_ESPACO);
+    desenharCartao(ctx, IMG_MARGEM, y, largura, IMG_CARTAO_H, cargo, fotos[i]);
+  });
+
+  /* JPEG e não PNG: as fotos são o volume da imagem e comprimem muito melhor
+   * assim (505 KB → ~170 KB), e todo alvo de compartilhamento aceita JPEG.
+   * WebP seria menor ainda, mas alguns alvos ainda tropeçam nele. */
+  return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+}
+
 /* -------------------------------------------------------- compartilhar (§5) */
+
+/* A imagem é preparada em segundo plano: gerar carrega fotos e codifica PNG, e
+ * o navigator.share precisa ser chamado dentro do gesto do usuário (o Safari
+ * recusa se houver await demais antes). Se estiver pronta, vai junto. */
+let imagemCache = null;        // { chave, blob }
+let gerandoImagem = false;
+let timerImagem = 0;
+
+function chaveDoEstado() {
+  return state.uf + '|' +
+         CARGOS.map(c => codificarVoto(state.votes[c.key])).join('|') + '|' +
+         (bases.get(state.uf) ? bases.get(state.uf).status : '-');
+}
+
+async function prepararImagem() {
+  const chave = chaveDoEstado();
+  if (gerandoImagem || (imagemCache && imagemCache.chave === chave)) return;
+  gerandoImagem = true;
+  try {
+    const blob = await gerarImagem();
+    if (blob) imagemCache = { chave, blob };
+  } catch (e) {
+    console.warn('santinho.art: não foi possível gerar a imagem -', e.message);
+  } finally {
+    gerandoImagem = false;
+  }
+}
+
+function agendarImagem() {
+  clearTimeout(timerImagem);
+  timerImagem = setTimeout(() => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(() => prepararImagem());
+    else prepararImagem();
+  }, 700);
+}
+
+function baixarImagem(blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'santinho-' + state.uf.toLowerCase() + '.jpg';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
 
 async function compartilhar() {
   const url = location.href;
-  if (navigator.share) {
+  const texto = textoDaCola();
+  const dados = { title: 'santinho.art', url };
+  if (texto) dados.text = texto;
+
+  const pronta = imagemCache && imagemCache.chave === chaveDoEstado() ? imagemCache.blob : null;
+  const arquivo = pronta
+    ? new File([pronta], 'santinho-' + state.uf.toLowerCase() + '.jpg', { type: 'image/jpeg' })
+    : null;
+
+  /* melhor caso: imagem + texto + link numa só folha nativa */
+  if (arquivo && navigator.canShare && navigator.canShare({ files: [arquivo] })) {
     try {
-      await navigator.share({ title: 'santinho.art', text: 'Minha cola eleitoral para 2026', url });
+      await navigator.share({ ...dados, files: [arquivo] });
       return;
     } catch (err) {
       if (err && err.name === 'AbortError') return;   // usuário cancelou
     }
   }
-  try {
-    await navigator.clipboard.writeText(url);
-    toast('Link copiado ✓');
-  } catch (_) {
-    toast('Copie o link da barra de endereço');
+  if (navigator.share) {
+    try {
+      await navigator.share(dados);
+      return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+    }
   }
+
+  /* sem compartilhamento nativo: copia a cola e entrega a imagem por download */
+  const paraCopiar = (texto ? texto + '\n\n' : '') + url;
+  let copiou = false;
+  try {
+    await navigator.clipboard.writeText(paraCopiar);
+    copiou = true;
+  } catch (_) { /* sem permissão de clipboard */ }
+
+  if (pronta) baixarImagem(pronta);
+  if (copiou) toast(pronta ? 'Cola copiada ✓ · imagem baixada' : (texto ? 'Cola copiada ✓' : 'Link copiado ✓'));
+  else toast(pronta ? 'Imagem baixada ✓' : 'Copie o link da barra de endereço');
+  if (!pronta) prepararImagem();       // deixa pronta para a próxima
 }
 
 /* ------------------------------------------------------------------ init */
@@ -1356,7 +1736,12 @@ function trocarUf(novaUf) {
   if (base && base.status === 'error') bases.delete(state.uf);
   const carregamento = loadElectionData(state.uf);
   atualizarStatus();
-  carregamento.then(() => { cacheDeCor.clear(); renderAll(); atualizarStatus(); });
+  carregamento.then(() => {
+    cacheDeCor.clear();
+    renderAll();
+    atualizarStatus();
+    agendarImagem();
+  });
 }
 
 function observarTecladoVirtual() {
@@ -1384,7 +1769,12 @@ function init() {
   const carregamento = Promise.all(
     [carregarMeta(), carregarCores(), loadElectionData('BR'), loadElectionData(state.uf)]);
   atualizarStatus();                  // já com as requisições na fila (§43)
-  carregamento.then(() => { cacheDeCor.clear(); renderAll(); atualizarStatus(); });
+  carregamento.then(() => {
+    cacheDeCor.clear();
+    renderAll();
+    atualizarStatus();
+    agendarImagem();
+  });
 }
 
 init();

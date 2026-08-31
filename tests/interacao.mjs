@@ -471,7 +471,7 @@ await escolherUf('DF');
 eq('DF: rotulo deputado distrital', (await read('de')).office, 'Dep. distrital');
 eq('DF: aria com nome completo', await page.$eval('#num-de', e => e.getAttribute('aria-label')),
    'Deputado distrital, número de 5 dígitos');
-eq('UF sem base -> indeterminado, nao INVALIDO', [(await read('df')).estado, (await read('df')).name], ['indeterminado', '—']);
+eq('UF sem base -> indeterminado, nao INVALIDO', [(await read('df')).estado, (await read('df')).name], ['indeterminado', '-']);
 eq('numeros preservados', (await read('df')).digits, '1313');
 
 /* ------------------------------------------------------- §44 falha de dados */
@@ -582,7 +582,7 @@ eq('estado neutro, nao INVALIDO', (await read('g')).estado, 'indeterminado');
 await sleep(700);
 eq('resolve assim que a base chega', (await read('g')).name, 'AGDA EXEMPLO');
 eq('numero digitado durante a carga foi preservado', (await read('df')).name, 'MAYA EXEMPLO');
-eq('aviso sai depois de carregar', await page.$eval('#status', e => e.textContent), 'dados de exemplo — base não oficial (MOCK)');
+eq('aviso sai depois de carregar', await page.$eval('#status', e => e.textContent), 'dados de exemplo - base não oficial (MOCK)');
 page.off('request', atrasar);
 await page.setRequestInterception(false);
 
@@ -834,7 +834,7 @@ await sleep(200);
 eq('cabecalho mostra so a sigla', await siglaNoCabecalho(), 'SP');
 eq('cabecalho tem bandeira', await page.$eval('#uf-flag', e => e.getAttribute('src')), 'assets/flags/SP.png');
 eq('placa do cabecalho nomeia o estado', await page.$eval('#uf-placa-trigger', e => e.getAttribute('aria-label')),
-   'Estado: SP — São Paulo. Trocar estado');
+   'Estado: SP - São Paulo. Trocar estado');
 eq('botao do rodape nomeia a acao', await page.$eval('#uf-trigger', e => e.getAttribute('aria-label')),
    'Trocar estado, hoje São Paulo');
 ok('sigla visivel contida no nome acessivel da placa (WCAG 2.5.3)', await page.evaluate(() => {
@@ -1166,20 +1166,120 @@ eq('candidato exclusivo de SP nao aparece em MG', (await buscar('helio teste')).
 await page.keyboard.press('Escape'); await esperarFolhaFechar();
 
 /* ----------------------------------------------------------- §5 share */
-console.log('\n== §5 compartilhamento (fallback clipboard)');
-await page.goto(BASE + '?uf=sp&g=13', { waitUntil: 'networkidle0' }); await sleep(120);
-await page.evaluate(() => {
-  delete navigator.share;
+console.log('\n== §5 compartilhamento: cola em texto, imagem e link');
+await page.goto(BASE + '?uf=sp&df=1313&de=13&s1=131&s2=999&g=13', { waitUntil: 'networkidle0' });
+await sleep(1600);            /* a imagem é preparada em segundo plano */
+
+/* espiona o que seria compartilhado, sem abrir folha nativa */
+const espionar = async (opcoes = {}) => page.evaluate(op => {
+  window.__share = null;
   window.__copiado = null;
+  window.__baixado = null;
+  if (op.comShare) {
+    navigator.share = dados => {
+      window.__share = {
+        title: dados.title, text: dados.text, url: dados.url,
+        arquivos: (dados.files || []).map(f => ({ nome: f.name, tipo: f.type, bytes: f.size })),
+      };
+      return op.cancela ? Promise.reject(Object.assign(new Error('x'), { name: 'AbortError' }))
+                        : Promise.resolve();
+    };
+    navigator.canShare = dados => op.comArquivos ? true : !dados.files;
+  } else {
+    delete navigator.share;
+    delete navigator.canShare;
+  }
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
     value: { writeText: t => { window.__copiado = t; return Promise.resolve(); } },
   });
-});
+  HTMLAnchorElement.prototype.click = function () {
+    if (this.download) window.__baixado = { nome: this.download, href: this.href.slice(0, 5) };
+  };
+}, opcoes);
+
+const resultado = () => page.evaluate(() => ({
+  share: window.__share, copiado: window.__copiado, baixado: window.__baixado,
+}));
+
+/* 1. plataforma com suporte a arquivo: imagem + texto + link numa só chamada */
+await espionar({ comShare: true, comArquivos: true });
 await page.click('#share');
-await sleep(120);
-eq('copiou a URL atual', await page.evaluate(() => window.__copiado), await page.evaluate(() => location.href));
-eq('feedback exibido', await page.$eval('#toast', e => e.hidden ? null : e.textContent), 'Link copiado ✓');
+await sleep(400);
+const comArquivo = await resultado();
+ok('compartilha com arquivo quando a plataforma aceita',
+   comArquivo.share && comArquivo.share.arquivos.length === 1);
+eq('o arquivo e um JPEG do santinho',
+   comArquivo.share.arquivos[0].nome + ' ' + comArquivo.share.arquivos[0].tipo,
+   'santinho-sp.jpg image/jpeg');
+ok('a imagem tem tamanho plausivel',
+   comArquivo.share.arquivos[0].bytes > 40000 && comArquivo.share.arquivos[0].bytes < 900000,
+   '(' + Math.round(comArquivo.share.arquivos[0].bytes / 1024) + ' KB)');
+eq('o link vai junto', comArquivo.share.url, await page.evaluate(() => location.href));
+ok('o texto lista os votos', comArquivo.share.text.includes('MAYA EXEMPLO'),
+   JSON.stringify(comArquivo.share.text.slice(0, 60)));
+eq('nao copia nem baixa quando compartilhou',
+   [comArquivo.copiado, comArquivo.baixado], [null, null]);
+
+/* conteúdo da cola em texto */
+const texto = comArquivo.share.text;
+const linhas = texto.split('\n').filter(Boolean);
+eq('cabecalho da cola', linhas[0], 'minha cola eleitoral 2026 - São Paulo (SP)');
+eq('uma linha por cargo preenchido', linhas.length - 1, 5);
+ok('candidato valido traz nome e partido',
+   linhas.some(l => l === 'DEP. FEDERAL · 1313 · MAYA EXEMPLO (FUT)'), JSON.stringify(linhas));
+ok('legenda aparece como legenda',
+   linhas.some(l => l === 'DEP. ESTADUAL · 13 · voto de legenda - FUT'), JSON.stringify(linhas));
+ok('numero inexistente e dito',
+   linhas.some(l => l === '2º SENADOR · 999 · número não encontrado'), JSON.stringify(linhas));
+ok('cargo vazio nao entra na cola', !texto.includes('PRESIDENTE'));
+
+/* 2. plataforma sem suporte a arquivo: texto + link, sem imagem */
+await espionar({ comShare: true, comArquivos: false });
+await page.click('#share');
+await sleep(300);
+const semArquivo = await resultado();
+eq('sem suporte a arquivo, compartilha so texto e link',
+   semArquivo.share.arquivos.length, 0);
+ok('o texto continua indo', semArquivo.share.text.includes('MAYA EXEMPLO'));
+
+/* 3. cancelar não deve cair para o clipboard */
+await espionar({ comShare: true, comArquivos: true, cancela: true });
+await page.click('#share');
+await sleep(300);
+eq('cancelar nao copia nada', (await resultado()).copiado, null);
+
+/* 4. sem compartilhamento nativo: copia a cola e entrega a imagem */
+await espionar({ comShare: false });
+await page.click('#share');
+await sleep(400);
+const semShare = await resultado();
+ok('copia a cola inteira', semShare.copiado && semShare.copiado.includes('MAYA EXEMPLO'));
+ok('copia o link no fim', semShare.copiado.trim().endsWith(await page.evaluate(() => location.href)));
+eq('baixa a imagem', semShare.baixado && semShare.baixado.nome, 'santinho-sp.jpg');
+eq('feedback conta as duas coisas',
+   await page.$eval('#toast', e => e.hidden ? null : e.textContent),
+   'Cola copiada ✓ · imagem baixada');
+
+/* 5. a imagem acompanha o estado: mudar um número invalida o cache */
+await page.click('.card[data-cargo="p"] .digit[data-index="0"]');
+await page.keyboard.press('3');
+await page.keyboard.press('1');
+await espionar({ comShare: true, comArquivos: true });
+await page.click('#share');
+await sleep(300);
+const logoApos = await resultado();
+eq('logo apos editar, vai sem imagem (cache invalidado)',
+   logoApos.share.arquivos.length, 0);
+ok('mas o texto ja tem o voto novo', logoApos.share.text.includes('PRESIDENTE'));
+await sleep(1600);
+await espionar({ comShare: true, comArquivos: true });
+await page.click('#share');
+await sleep(400);
+eq('a imagem volta a ficar pronta sozinha',
+   (await resultado()).share.arquivos.length, 1);
+
+/* aria continua descrevendo o botao */
 eq('aria-label no botao', await page.$eval('#share', e => e.getAttribute('aria-label')), 'Compartilhar minha cola eleitoral');
 eq('rotulo visivel no botao', await page.$eval('.share-rotulo', e => e.textContent), 'Compartilhar');
 ok('rotulo visivel contido no acessivel (WCAG 2.5.3)', await page.$eval('#share',
@@ -1188,6 +1288,12 @@ eq('botao de estado diz o que faz', await page.$eval('#uf-trigger .rotulo-botao'
    'trocar estado');
 eq('botao de busca diz o que faz', await page.$eval('#busca-trigger .rotulo-botao', e => e.textContent),
    'buscar por nome');
+ok('rotulos do rodape contidos nos nomes acessiveis (WCAG 2.5.3)', await page.evaluate(() =>
+  ['#uf-trigger', '#busca-trigger'].every(sel => {
+    const b = document.querySelector(sel);
+    const visivel = b.querySelector('.rotulo-botao').textContent.toLowerCase();
+    return b.getAttribute('aria-label').toLowerCase().includes(visivel);
+  })));
 eq('os dois botoes do rodape seguem o mesmo padrao icone + rotulo', await page.evaluate(() => {
   const medir = sel => {
     const b = document.querySelector(sel);
@@ -1203,12 +1309,6 @@ eq('os dois botoes do rodape seguem o mesmo padrao icone + rotulo', await page.e
            iconesDoMesmoTamanho: uf.icone === busca.icone,
            ordemIgual: uf.iconeAntesDoRotulo && busca.iconeAntesDoRotulo };
 }), { ambosComIcone: true, iconesDoMesmoTamanho: true, ordemIgual: true });
-ok('rotulos do rodape contidos nos nomes acessiveis (WCAG 2.5.3)', await page.evaluate(() =>
-  ['#uf-trigger', '#busca-trigger'].every(sel => {
-    const b = document.querySelector(sel);
-    const visivel = b.querySelector('.rotulo-botao').textContent.toLowerCase();
-    return b.getAttribute('aria-label').toLowerCase().includes(visivel);
-  })));
 
 /* -------------------------------------------------------- §34/§38 extras */
 console.log('\n== §34 acessibilidade / §38 segurança');

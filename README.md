@@ -2180,7 +2180,7 @@ metades exatas (bandeira à esquerda, sigla centrada à direita) passaram para u
 placa interna, então a geometria pedida sobrevive e o rótulo vem depois dela.
 
 Os três rótulos visíveis estão **contidos** nos nomes acessíveis
-(`Estado: São Paulo. Trocar estado`, `Buscar por nome do candidato`,
+(`Estado: SP - São Paulo. Trocar estado`, `Buscar por nome do candidato`,
 `Compartilhar minha cola eleitoral`), como pede o WCAG 2.5.3 — senão comando de
 voz pelo texto visível não funciona. A suíte verifica essa continência.
 
@@ -2199,7 +2199,7 @@ ponto, e a marca virou `santinho . art`.
 `registros ainda não julgados pelo TSE` saiu por decisão de produto. A ressalva
 continua no dado (`meta.situacaoPublicada`) e documentada em 59.4 — só não
 aparece mais na interface. Os outros avisos seguem de pé: `carregando dados…`,
-`dados de exemplo — base não oficial` e a falha de validação do §44.
+`dados de exemplo - base não oficial` e a falha de validação do §44.
 
 ## 59.12. Busca de candidato por nome
 
@@ -2344,7 +2344,73 @@ conteúdo suficiente para preencher: folha que muda de tamanho conforme o
 resultado dá a sensação de instabilidade. No desktop vale o teto absoluto de
 620px, senão 80dvh viraria um cartão gigante.
 
-## 59.13. Publicação no GitHub Pages
+## 59.13. Compartilhamento: link, cola em texto e imagem
+
+Um toque em `Compartilhar` entrega as três coisas de uma vez, quando a
+plataforma deixa.
+
+### A cola em texto
+
+Toda pontuação exibida usa **hífen simples**, nunca travessão: `-` no lugar de
+`—`. Vale para a interface (rótulos, avisos, dígito vazio), a cola compartilhada
+e as meta tags. Os comentários do código seguem com travessão, que é prosa e não
+texto de tela.
+
+```text
+minha cola eleitoral 2026 - São Paulo (SP)
+
+DEP. FEDERAL · 1000 · CELSO RUSSOMANNO (REPUBLICANOS)
+DEP. ESTADUAL · 50 · voto de legenda - PSOL
+1º SENADOR · 111 · GUILHERME DERRITE (PP)
+2º SENADOR · 999 · número não encontrado
+GOVERNADOR · 13 · FERNANDO HADDAD (PT)
+PRESIDENTE · 13 · LULA (PT)
+```
+
+Cargo vazio não entra. Legenda e número inexistente são ditos com palavras, em
+vez de sumirem. Não há alinhamento por espaços: a fonte de aplicativo de mensagem
+é proporcional e o alinhamento não sobreviveria — separador dá conta.
+
+### A imagem do santinho
+
+Gerada em `<canvas>`, **sem biblioteca**: o layout do card é reescrito em 2D
+(`gerarImagem()` em `app.js`). Não usei `html2canvas` porque seria dependência
+externa (§36) e, por CDN, conteúdo de terceiro no site (§38). Tudo é do mesmo
+domínio, então o canvas não fica *tainted* e o `toBlob` funciona.
+
+Saída: 1080px de largura, altura conforme os seis cards, **JPEG q0.92**. A escolha
+do formato foi medida, não chutada:
+
+| Formato | Peso |
+|---|---|
+| PNG | 505 KB |
+| **JPEG q0.92** | **209 KB** |
+| WebP q0.92 | ~40 KB, mas alguns alvos de compartilhamento ainda tropeçam |
+
+As fotos são o volume da imagem e são conteúdo fotográfico — comprimem muito
+melhor em JPEG, e todo alvo aceita JPEG.
+
+### A imagem é preparada antes do clique
+
+O `navigator.share()` precisa ser chamado **dentro do gesto do usuário**; o Safari
+recusa se houver `await` demais antes. Gerar a imagem carrega até seis fotos e
+codifica um JPEG, então ela é montada em segundo plano (`requestIdleCallback`,
+700ms depois da última edição) e guardada num cache com a assinatura do estado.
+No clique, se o cache corresponde ao estado atual, o arquivo vai junto; se não,
+compartilha texto e link e deixa a imagem pronta para a próxima. A suíte cobre
+exatamente esse caso: editar um número e compartilhar em seguida vai sem imagem,
+e depois de 1,6s a imagem volta sozinha.
+
+### Escada de recursos
+
+| Situação | O que acontece |
+|---|---|
+| `canShare({files})` | imagem + texto + link numa folha nativa |
+| só `navigator.share` | texto + link |
+| sem nada (desktop) | copia a cola inteira e **baixa** a imagem |
+| usuário cancela | nada; não cai para o clipboard |
+
+## 59.14. Publicação no GitHub Pages
 
 Nada de build: *Settings → Pages → Deploy from a branch → `main` / root*.
 Existe `.nojekyll` para o Jekyll não interferir. Todos os caminhos são
@@ -2352,9 +2418,9 @@ Existe `.nojekyll` para o Jekyll não interferir. Todos os caminhos são
 `usuario.github.io/santinho.art/` e no domínio próprio. Para o domínio, adicione
 um arquivo `CNAME` com `santinho.art` e aponte o DNS.
 
-## 59.14. Verificação
+## 59.15. Verificação
 
-`tests/interacao.mjs` — **593 asserções passando**, cobrindo os §48/§50 e mais.
+`tests/interacao.mjs` — **628 asserções passando**, cobrindo os §48/§50 e mais.
 A suíte sobe o servidor estático, acha o Chrome e dirige um navegador de verdade.
 Ela serve `tests/fixtures/data` (base fictícia fixa), **não** `data/`: atualizar
 a base real do TSE não pode quebrar teste.
@@ -2377,6 +2443,10 @@ O que ela verifica:
   sobrevivendo ao recarregamento, troca de UF preservando números;
 - falha de dados: interface segue utilizável, números preservados, aviso
   discreto, compartilhamento funcionando;
+- compartilhamento: conteúdo da cola em texto (válido, legenda, número
+  inexistente, cargo vazio fora), imagem indo como JPEG de tamanho plausível,
+  link junto, cancelamento não caindo para o clipboard, desktop copiando e
+  baixando, e o cache da imagem invalidando ao editar e voltando sozinho;
 - carregamento lento: aviso discreto, interface não bloqueada, digitação
   liberada antes de a base chegar e resolução assim que ela chega;
 - nomes de urna longos: inteiros, em até duas linhas, sem corte vertical nem
@@ -2448,7 +2518,7 @@ Ambos apareceram só porque eu olhei os screenshots, não porque um teste falhou
 2. **Asserção que passava vazia.**
 
    A asserção "subtítulo em uma linha" passava sem medir nada: as fixtures têm
-   `fonte: MOCK`, o que faz o cabeçalho exibir `dados de exemplo — base não
+   `fonte: MOCK`, o que faz o cabeçalho exibir `dados de exemplo - base não
    oficial`, e a regra `body.has-status .tagline { display: none }` esconde o
    subtítulo. A verificação caía no ramo `!subVisivel` e dava verde mesmo com a
    frase quebrando em duas linhas no site real. Agora a suíte remove
@@ -2464,7 +2534,7 @@ quatro nomes mais longos da base (30 caracteres) renderizando inteiros em
 320×640 e 390×844, e as fotos oficiais carregando nos seis cards sem nenhuma
 requisição falhando.
 
-## 59.15. Pendências conscientes
+## 59.16. Pendências conscientes
 
 - **`og:image`**: `og.png` (1200×630) está no repositório; a fonte é
   `scripts/og.html`, que se captura em 1200×630 com qualquer headless para
