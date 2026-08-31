@@ -1,0 +1,54 @@
+name: Atualizar base do TSE
+
+on:
+  workflow_dispatch:
+    inputs:
+      ano:
+        description: Ano da eleição
+        default: "2026"
+      fotos:
+        description: 'Fotos oficiais: "locais" baixa ~113 MB (um ZIP por UF) ou "nenhuma"'
+        default: "locais"
+  schedule:
+    # diariamente às 09:00 UTC (06:00 em Brasília) durante o período eleitoral
+    - cron: "0 9 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # o importador não tem dependências npm; só precisa de unzip,
+      # que já vem na imagem ubuntu-latest.
+      # Com --fotos=locais o job baixa ~113 MB; o commit só acontece se algum
+      # byte mudou de verdade, então a execução diária normalmente não gera nada.
+      - name: Importar candidatos
+        run: |
+          node scripts/update-data.mjs \
+            --fetch \
+            --ano=${{ inputs.ano || '2026' }} \
+            --fotos=${{ inputs.fotos || 'locais' }}
+
+      - name: Commitar se a base mudou
+        run: |
+          if git diff --quiet -- data; then
+            echo "base sem alterações"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          git commit -m "chore(data): atualiza base de candidatos do TSE"
+          git push
