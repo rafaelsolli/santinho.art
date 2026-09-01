@@ -2030,7 +2030,6 @@ Ambas viram teste de regressão, porque não são óbvias em revisão de código
 
 ```text
 santinho.art                    [🇧🇷│SP]  [⤴ Compartilhar]
-nada impresso: nem voto, nem santinho
 
         …seis cards…
 
@@ -2050,26 +2049,22 @@ cabeçalho, ao lado do compartilhar, e também puxa a ficha: se alguém tentar
 trocar de estado clicando ali, funciona. O botão do rodapé ficou só com o rótulo
 `trocar estado`. Não existe mais selo de ano — a placa ocupa aquele lugar.
 
-### O subtítulo passa por baixo dos controles
+### O subtítulo saiu
 
-O subtítulo é `grid-column: 1 / -1` de propósito: colocado na coluna 1, ele
-herdaria a largura sobrada pela coluna dos controles (~144px) e quebraria em duas
-linhas em qualquer tela.
+Ele existiu por várias versões ("nada impresso: nem voto, nem santinho") e deu
+trabalho desproporcional: era `grid-column: 1 / -1` para não quebrar em duas
+linhas, corria por baixo da placa e do compartilhar, encavalou neles até os
+controles do cabeçalho encurtarem (`--btn-topo: calc(var(--btn) * .84)`), e tinha
+degrau próprio na escada de altura do §32 para sumir antes dos cards apertarem.
 
-Sendo de largura cheia, ele corre por baixo da placa e do compartilhar — e por um
-tempo **encavalava** neles: uma margem negativa o trazia para dentro daquela
-faixa. A correção não foi mexer no subtítulo, e sim **encurtar os controles do
-cabeçalho** (`--btn-topo: calc(var(--btn) * .84)`), que passaram a terminar antes
-dele. As abas do rodapé continuam em `--btn` cheio, por serem o alvo de toque
-principal.
+Foi removido porque não dizia ao usuário nada que ele precisasse para montar a
+cola. O que sobrou do episódio e continua valendo: os controles do cabeçalho
+seguem em `--btn-topo`, mais baixos que as abas do rodapé, porque o cabeçalho
+deve ocupar o mínimo de altura possível; as abas ficam em `--btn` cheio, por
+serem o alvo de toque principal.
 
-Com isso o subtítulo tem 6-7px de respiro dos botões (medido; ele tinha ficado
-colado quando os controles encurtaram) e 12-13px do título — distância aceita
-como consequência de ele estar embaixo dos botões, não do lado deles.
-
-E como ele não disputa espaço com nada, **não precisa mais sumir por largura**:
-fica visível até 280px. Só a marca cede lugar, e apenas abaixo de 310px, onde a
-primeira faixa realmente não cabe. A escada por *altura* do §32 continua.
+A altura que ele ocupava foi para os cards. A suíte agora verifica que ele não
+voltou ao DOM por acidente.
 
 ### O ".art" recua
 
@@ -2409,13 +2404,26 @@ Gerada em `<canvas>`, **sem biblioteca**: o layout do card é reescrito em 2D
 externa (§36) e, por CDN, conteúdo de terceiro no site (§38). Tudo é do mesmo
 domínio, então o canvas não fica *tainted* e o `toBlob` funciona.
 
-Saída: 1080px de largura, altura conforme os seis cards, **JPEG q0.92**. A escolha
-do formato foi medida, não chutada:
+Saída: **1080x1920, o quadro de stories**, em **JPEG q0.92** (~232 KB).
+
+A altura era, antes, o que os seis cards pedissem - 1080x1510. Num quadro 9:16 o
+Instagram escala pela altura para preencher, e o excesso de largura sai pelas
+bordas: `1080 * (1920/1510) = 1373`, ou seja **146px cortados de cada lado** -
+justamente a foto de um lado e o número do outro. Com 9:16 exato nada é cortado.
+
+O bloco de conteúdo é centrado na vertical e os cards continuam com os mesmos
+208px de altura (nada encolheu). A folga que sobra em cima e embaixo, ~256px, é a
+**zona segura** que a interface de stories ocupa: avatar e nome no topo, campo de
+resposta embaixo. A suíte mede isso varrendo os pixels da imagem gerada: acha o
+primeiro e o último pixel que não é fundo e exige 200px de folga em cima e
+embaixo, mais 20px nas laterais.
+
+A escolha do formato de arquivo foi medida, não chutada:
 
 | Formato | Peso |
 |---|---|
 | PNG | 505 KB |
-| **JPEG q0.92** | **209 KB** |
+| **JPEG q0.92** | **232 KB** |
 | WebP q0.92 | ~40 KB, mas alguns alvos de compartilhamento ainda tropeçam |
 
 As fotos são o volume da imagem e são conteúdo fotográfico — comprimem muito
@@ -2708,7 +2716,7 @@ Duas suítes, as duas no `npm test`:
   usuário canônico, plataforma vs. site próprio, TLD real, caminho vazio, dedupe
   e corte em cinco. Os casos do Lula, do Patrus e do Helton
   estão lá como regressão, com o nome deles no rótulo.
-- `tests/interacao.mjs` — **666 asserções passando**, cobrindo os §48/§50 e mais.
+- `tests/interacao.mjs` — **614 asserções passando**, cobrindo os §48/§50 e mais.
   A suíte sobe o servidor estático, acha o Chrome e dirige um navegador de
   verdade. Ela serve `tests/fixtures/data` (base fictícia fixa), **não** `data/`:
   atualizar a base real do TSE não pode quebrar teste.

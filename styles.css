@@ -627,26 +627,22 @@ body {
   box-shadow: 0 1px 0 rgba(0, 0, 0, .14), 0 5px 12px -9px rgba(0, 0, 0, .55);
 }
 
-.tagline, .status {
+/* Só o aviso de status vive aqui. O subtítulo saiu: ele não dizia ao usuário
+   nada que ele precisasse para montar a cola, e custava uma faixa de altura
+   mais toda uma escada de responsividade para não encavalar nos controles. */
+.status {
   grid-column: 1 / -1;      /* largura cheia: na coluna 1 a frase quebraria */
-  /* Sem margem negativa: ela trazia o subtítulo para dentro da faixa dos
-     controles e ele encavalava na placa de estado. Quem encurta a distância são
-     os controles mais baixos (--btn-topo); a suíte mede a folga resultante e
-     verifica que não há sobreposição. */
   margin: 6px 0 0;
   font-size: clamp(10px, 2.9vw, 12px);
   color: var(--ink-soft);
   line-height: 1.25;
-  text-align: center;       /* subtítulo e avisos centrados na faixa */
+  font-weight: 700;
+  text-align: center;
 }
-.status { font-weight: 700; }
-body.has-status .tagline { display: none; }
 .status:empty { display: none; }
 .status[data-kind="warn"] { color: var(--ink); }
 
-/* O subtítulo é de largura cheia e passa por baixo dos controles, então não
-   disputa espaço com nada e não precisa sumir por largura — só por altura, na
-   escada do §32. A marca cede lugar se a primeira faixa não couber. */
+/* A marca cede lugar se a primeira faixa não couber. */
 @media (max-width: 309px) {
   .brand-name { display: none; }
 }
@@ -982,9 +978,6 @@ body.has-status .tagline { display: none; }
 @media (max-height: 780px) {
   :root { --gap: clamp(4px, .9vh, 8px); }
 }
-@media (max-height: 720px) {
-  .tagline { display: none; }
-}
 @media (max-height: 680px) {
   .header { padding-top: 0; }
   .digits { font-size: min(40cqh, calc(30cqw / var(--n, 4))); }
@@ -996,7 +989,6 @@ body.has-status .tagline { display: none; }
 
 /* teclado virtual aberto: aperta o header e os gaps, mantém os 6 cards */
 body.kb-open { --gap: 4px; }
-body.kb-open .tagline { display: none; }
 
 /* ------------------------------------------------ adaptação para desktop */
 @media (min-width: 700px) {

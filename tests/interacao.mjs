@@ -155,7 +155,7 @@ for (const [w, h] of [[320,640],[360,800],[375,667],[390,844],[412,915],[430,932
         const placa = r('#uf-placa-trigger'), uf = r('#uf-trigger');
         const busca = r('#busca-trigger'), share = r('#share'), cards = r('.cards');
         /* cabeçalho e rodapé têm alturas próprias: os controles de cima são
-           mais baixos para o subtítulo passar por baixo deles sem encavalar */
+           mais baixos, para o cabeçalho ocupar o mínimo de altura */
         const alturasTopo = [placa.height, share.height];
         const alturasRodape = [uf.height, busca.height];
         const h1 = document.querySelector('.brand-name');
@@ -164,12 +164,9 @@ for (const [w, h] of [[320,640],[360,800],[375,667],[390,844],[412,915],[430,932
         faixa.selectNodeContents(h1);
         const tituloTexto = faixa.getBoundingClientRect();
         const ctrl = document.querySelector('.controls').getBoundingClientRect();
-        const sub = document.querySelector('.tagline');
-        /* com as fixtures o aviso "dados de exemplo" esconde o subtítulo, e a
-           asserção passaria sem medir nada: força a visibilidade para medir */
-        document.body.classList.remove('has-status');
-        const subVisivel = getComputedStyle(sub).display !== 'none';
         return {
+          /* o subtítulo foi removido: nada deve ter sobrado no DOM */
+          semSubtitulo: !document.querySelector('.tagline'),
           /* placa de estado e compartilhar dividem a primeira faixa */
           placaNoCabecalho: placa.top < cards.top,
           placaAntesDoShare: placa.right <= share.left + 1,
@@ -202,41 +199,6 @@ for (const [w, h] of [[320,640],[360,800],[375,667],[390,844],[412,915],[430,932
           marcaVisivel,
           marcaCabe: !marcaVisivel || tituloTexto.right <= placa.left,
           tituloNoTopo: !marcaVisivel || Math.abs(tituloTexto.top - ctrl.top) <= 3,
-          subVisivel,
-          /* o subtítulo é de largura cheia e passa por baixo dos controles:
-             não pode sobrepor nenhum deles */
-          subSobrepoeControles: !subVisivel ? false : (() => {
-            const r2 = document.createRange();
-            r2.selectNodeContents(sub);
-            const t2 = r2.getBoundingClientRect();
-            return ['#uf-placa-trigger', '#share'].some(sel => {
-              const c = document.querySelector(sel).getBoundingClientRect();
-              return t2.right > c.left && t2.bottom > c.top && t2.top < c.bottom;
-            });
-          })(),
-          subtituloUmaLinha: !subVisivel || Math.round(
-            sub.getBoundingClientRect().height /
-            (parseFloat(getComputedStyle(sub).fontSize) * 1.25)) === 1,
-          subCentrado: !subVisivel ? true : (() => {
-            const r4 = document.createRange();
-            r4.selectNodeContents(sub);
-            const t4 = r4.getBoundingClientRect();
-            const caixa = sub.getBoundingClientRect();
-            return Math.abs((t4.left + t4.right) / 2 - (caixa.left + caixa.right) / 2) <= 1.5;
-          })(),
-          /* a folga que importa agora é do subtítulo para os botões acima dele:
-             ele passa por baixo deles e não pode ficar colado */
-          folgaSubBotoes: !subVisivel ? null : (() => {
-            const r3 = document.createRange();
-            r3.selectNodeContents(sub);
-            const t3 = r3.getBoundingClientRect();
-            const abaixo = Math.max(placa.bottom, share.bottom);
-            return +(t3.top - abaixo).toFixed(1);
-          })(),
-          folgaSubtitulo: (subVisivel && marcaVisivel)
-            ? +((() => { const r2 = document.createRange(); r2.selectNodeContents(sub);
-                         return r2.getBoundingClientRect().top; })() - tituloTexto.bottom).toFixed(1)
-            : null,
         };
       })(),
     };
@@ -258,18 +220,7 @@ for (const [w, h] of [[320,640],[360,800],[375,667],[390,844],[412,915],[430,932
   ok('compartilhar dentro da tela', m.cromo.shareDentro, tag);
   ok('marca cabe sem encavalar na placa', m.cromo.marcaCabe, tag);
   ok('titulo na mesma faixa dos controles', m.cromo.tituloNoTopo, tag);
-  ok('subtitulo em uma linha', m.cromo.subtituloUmaLinha, tag);
-  ok('subtitulo nao encavala na placa nem no compartilhar',
-     !m.cromo.subSobrepoeControles, tag);
-  ok('subtitulo centrado na faixa', m.cromo.subCentrado, tag);
-  ok('subtitulo com respiro dos botoes (4 a 12px)',
-     m.cromo.folgaSubBotoes === null ||
-     (m.cromo.folgaSubBotoes >= 4 && m.cromo.folgaSubBotoes <= 12),
-     tag + ' (' + m.cromo.folgaSubBotoes + 'px)');
-  ok('distancia titulo-subtitulo entre 2 e 16px',
-     m.cromo.folgaSubtitulo === null ||
-     (m.cromo.folgaSubtitulo >= 2 && m.cromo.folgaSubtitulo <= 16),
-     tag + ' (' + m.cromo.folgaSubtitulo + 'px)');
+  ok('subtitulo removido do DOM', m.cromo.semSubtitulo, tag);
   eq('marca sem espacos parasitas ' + tag, m.cromo.marca, 'santinho.art');
   ok('".art" em cinza mais claro que "santinho"', m.cromo.sufixoMaisClaro, tag);
 }
@@ -1474,6 +1425,47 @@ eq('UF sem arquivo de redes nao quebra nada', await page.evaluate(async () => {
 await page.goto(BASE + '?uf=mg&df=1313', { waitUntil: 'networkidle0' }); await sleep(400);
 eq('nenhum icone e nenhum erro quando falta data/redes/MG.json',
    await page.evaluate(() => document.querySelectorAll('.rede').length), 0);
+
+/* --------------------------------------- imagem do compartilhamento (§5) */
+console.log('\n== imagem do compartilhamento em formato de stories');
+await page.goto(BASE + '?uf=sp&df=1313&de=13131&s1=131&s2=132&g=13&p=13',
+                { waitUntil: 'networkidle0' });
+await sleep(500);
+const img = await page.evaluate(async () => {
+  const blob = await gerarImagem();
+  const bitmap = await createImageBitmap(blob);
+  const c = document.createElement('canvas');
+  c.width = bitmap.width; c.height = bitmap.height;
+  c.getContext('2d').drawImage(bitmap, 0, 0);
+  const px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+  /* o fundo é #ececee com uma hachura de rgba(0,0,0,.016): a hachura desvia ~4
+     do 236, e o cartão (#fbfbfc) desvia 15 - um limiar de 10 separa os dois */
+  const conteudo = i => Math.abs(px[i] - 236) > 10 || Math.abs(px[i+1] - 236) > 10 ||
+                        Math.abs(px[i+2] - 236) > 10;
+  let topo = -1, base = -1, esq = c.width, dir = -1;
+  for (let y = 0; y < c.height; y++) {
+    for (let x = 0; x < c.width; x++) {
+      if (!conteudo((y * c.width + x) * 4)) continue;
+      if (topo < 0) topo = y;
+      base = y;
+      if (x < esq) esq = x;
+      if (x > dir) dir = x;
+    }
+  }
+  return { largura: bitmap.width, altura: bitmap.height, tipo: blob.type,
+           kb: Math.round(blob.size / 1024), topo, base, esq, dir };
+});
+eq('1080x1920, o quadro de stories', [img.largura, img.altura], [1080, 1920]);
+eq('proporcao 9:16 exata', img.largura / img.altura, 9 / 16);
+eq('jpeg', img.tipo, 'image/jpeg');
+ok('peso abaixo de 900 KB', img.kb < 900, img.kb + ' KB');
+/* o conteúdo não pode invadir a zona que a interface de stories ocupa (avatar e
+   nome no topo, campo de resposta embaixo) */
+ok('conteudo a 200px ou mais do topo', img.topo >= 200, img.topo + 'px');
+ok('conteudo a 200px ou mais da base', 1920 - img.base >= 200, (1920 - img.base) + 'px');
+/* e as bordas laterais precisam de margem: era ali que o corte comia a foto */
+ok('margem lateral esquerda de 20px ou mais', img.esq >= 20, img.esq + 'px');
+ok('margem lateral direita de 20px ou mais', 1080 - img.dir >= 20, (1080 - img.dir) + 'px');
 
 console.log('\n== erros de console/pageerror');
 eq('sem erros de JS', erros, []);

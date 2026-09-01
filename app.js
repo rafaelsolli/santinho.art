@@ -1641,7 +1641,6 @@ function atualizarStatus() {
     els.status.textContent = '';
     els.status.dataset.kind = 'info';
   }
-  document.body.classList.toggle('has-status', els.status.textContent !== '');
 }
 
 let toastTimer = 0;
@@ -1676,11 +1675,23 @@ function textoDaCola() {
  * reescrito aqui em 2D, o que dá controle total e mantém o site sem dependência
  * (§36). Tudo é do mesmo domínio, então o canvas não fica "tainted" e toBlob
  * funciona (§38). */
+/* 1080x1920, o formato de stories.
+ *
+ * Antes a altura era o que os cartões pedissem (1080x1510). Num quadro 9:16 o
+ * Instagram escala pela altura para preencher, e o excesso de largura sai pelas
+ * bordas: 1080 * (1920/1510) = 1373, ou seja 146px cortados de cada lado -
+ * justamente a foto de um lado e o número do outro.
+ *
+ * Com 9:16 exato nada é cortado. O bloco de conteúdo é centrado na vertical, e
+ * a folga que sobra em cima e embaixo (~256px) é a "zona segura" que a interface
+ * de stories ocupa: avatar e nome no topo, campo de resposta embaixo. */
 const IMG_LARGURA = 1080;
+const IMG_ALTURA = 1920;
 const IMG_MARGEM = 40;
 const IMG_CARTAO_H = 208;
-const IMG_ESPACO = 18;
-const IMG_CABECALHO = 132;
+const IMG_ESPACO = 14;
+const IMG_MARCA_H = 60;
+const IMG_MARCA_ESPACO = 30;
 const FAMILIA = '"Helvetica Neue", Helvetica, Arial, sans-serif';
 
 function carregarImagem(src) {
@@ -1879,23 +1890,25 @@ function desenharSeloECargo(ctx, x, meio, sigla, cargoTexto, cor, corTexto, altu
 }
 
 async function gerarImagem() {
-  const altura = IMG_CABECALHO + CARGOS.length * IMG_CARTAO_H +
-                 (CARGOS.length - 1) * IMG_ESPACO + IMG_MARGEM;
+  const cartoes = CARGOS.length * IMG_CARTAO_H + (CARGOS.length - 1) * IMG_ESPACO;
+  const bloco = IMG_MARCA_H + IMG_MARCA_ESPACO + cartoes;
+  const topo = Math.round((IMG_ALTURA - bloco) / 2);
+
   const canvas = document.createElement('canvas');
   canvas.width = IMG_LARGURA;
-  canvas.height = altura;
+  canvas.height = IMG_ALTURA;
   const ctx = canvas.getContext('2d');
 
-  /* fundo */
+  /* fundo, sangrando até a borda do quadro */
   ctx.fillStyle = '#ececee';
-  ctx.fillRect(0, 0, IMG_LARGURA, altura);
+  ctx.fillRect(0, 0, IMG_LARGURA, IMG_ALTURA);
   ctx.save();
   ctx.strokeStyle = 'rgba(0,0,0,.016)';
   ctx.lineWidth = 3;
-  for (let i = -altura; i < IMG_LARGURA; i += 10) {
+  for (let i = -IMG_ALTURA; i < IMG_LARGURA; i += 10) {
     ctx.beginPath();
     ctx.moveTo(i, 0);
-    ctx.lineTo(i + altura, altura);
+    ctx.lineTo(i + IMG_ALTURA, IMG_ALTURA);
     ctx.stroke();
   }
   ctx.restore();
@@ -1912,7 +1925,7 @@ async function gerarImagem() {
 
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
-  const baseY = IMG_MARGEM + 34;
+  const baseY = topo + IMG_MARCA_H / 2;
   ctx.font = '800 54px ' + FAMILIA;
   ctx.fillStyle = '#17181b';
   ctx.fillText('santinho', IMG_MARGEM, baseY);
@@ -1934,14 +1947,11 @@ async function gerarImagem() {
     ctx.fillText(state.uf, bx + bw + 12, baseY + 1);
   }
 
-  ctx.font = '600 26px ' + FAMILIA;
-  ctx.fillStyle = '#6b6d73';
-  ctx.fillText('nada impresso: nem voto, nem santinho', IMG_MARGEM, baseY + 44);
-
   /* cartões */
   const largura = IMG_LARGURA - IMG_MARGEM * 2;
+  const cartoesY = topo + IMG_MARCA_H + IMG_MARCA_ESPACO;
   CARGOS.forEach((cargo, i) => {
-    const y = IMG_CABECALHO + i * (IMG_CARTAO_H + IMG_ESPACO);
+    const y = cartoesY + i * (IMG_CARTAO_H + IMG_ESPACO);
     desenharCartao(ctx, IMG_MARGEM, y, largura, IMG_CARTAO_H, cargo, fotos[i]);
   });
 
