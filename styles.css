@@ -647,6 +647,11 @@ body {
    trouxe uma cola e nada foi editado, então em visita limpa não custam altura.
    São a peça que faz a cola recebida parecer editável sem depender de leitura:
    agem no toque, e tocar em qualquer uma delas decide. */
+/* `display: flex` de autor vence o `[hidden] { display: none }` do navegador -
+   a mesma armadilha do <dialog> (ver 59.10). Sem esta linha o par ficava na tela
+   para sempre, mesmo com a propriedade `hidden` ligada. */
+.refazer-par[hidden] { display: none; }
+
 .refazer-par {
   grid-column: 1 / -1;
   position: relative;
@@ -818,6 +823,9 @@ body {
   --photo-gap:  clamp(7px, 2.4vw, 12px);
   --band-tail:  clamp(13px, 4.5cqw, 30px);
   --card-gap:   clamp(6px, 2vw, 12px);
+  /* respiro entre a ponta da faixa e o texto: sem ele a diagonal encostava na
+     primeira letra do nome (medido: 0,3px de folga em 320x568) */
+  --band-folga: 6px;
   position: relative;
   min-height: 0;
   overflow: hidden;
@@ -848,12 +856,22 @@ body {
   clip-path: polygon(0 0, 100% 0, 58% 100%, 0 100%);
   opacity: .95;
 }
-/* Retorno de toque. Os botões todos têm scale(.96) no :active e o card não tinha
-   nada, então tocar num santinho não dava sinal de que algo aconteceu. Bem mais
-   discreto que nos botões: o card é grande, e 4% ali seria um salto. */
-@media (prefers-reduced-motion: no-preference) {
-  .card:active { transform: scale(.994); }
-}
+/* Retorno de toque no card, por COR e nunca por transform.
+ *
+ * A primeira versão usava `transform: scale(.994)` e quebrou a digitação no
+ * iPhone: o teclado começava a abrir e fechava na hora, perdendo o foco. O
+ * motivo é que o input mestre é `position: absolute; inset: 0` DENTRO do card,
+ * e `transform` num ancestral do campo focado cria um novo bloco contenedor -
+ * a lógica de "rolar até o campo focado" do iOS se perde e ele desiste do
+ * teclado. O `:active` dispara justamente no toque, no mesmo instante do
+ * focus().
+ *
+ * Pela mesma razão nada de `filter`, `perspective`, `will-change: transform`
+ * nem `contain: paint` no card ou em qualquer ancestral do input: todos criam
+ * bloco contenedor. Sobram cor, sombra e borda, que não criam nada.
+ *
+ * §56: digitação correta é a prioridade 1, cosmético é a última. */
+.card:active { background: color-mix(in srgb, var(--ink) 4%, var(--card)); }
 
 /* filete claro acompanhando a diagonal, típico de impresso */
 .band::after {
@@ -1566,10 +1584,13 @@ body {
 
      O conserto é geométrico, não um ajuste fino por breakpoint: o texto começa
      depois do ponto MAIS LARGO da faixa (a borda superior direita, em
-     --band-tail além da foto). Assim não existe altura de tela em que ela
-     alcance o nome. Nas telas largas, onde --card-gap já cobre a cauda, o
-     max() zera o recuo e nada muda. */
-  padding-left: max(0px, calc(var(--band-tail) - var(--card-gap)));
+     --band-tail além da foto), mais um respiro. Assim não existe altura de tela
+     em que ela alcance o nome.
+
+     O respiro não é preciosismo: sem ele a conta fecha em ZERO, e zero quer
+     dizer a diagonal vermelha encostada na primeira letra - foi o que apareceu
+     em 320x568, com 0,3px de folga medida. */
+  padding-left: max(0px, calc(var(--band-tail) - var(--card-gap) + var(--band-folga)));
 }
 
 .name {

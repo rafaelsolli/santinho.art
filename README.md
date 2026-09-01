@@ -1783,14 +1783,21 @@ O conserto não é um ajuste por breakpoint, é geometria: o texto do `.ident` p
 a começar depois do **ponto mais largo** da faixa.
 
 ```css
-.ident { padding-left: max(0px, calc(var(--band-tail) - var(--card-gap))); }
+.ident { padding-left: max(0px, calc(var(--band-tail) - var(--card-gap) + var(--band-folga))); }
 ```
 
 Assim não existe altura de tela em que a faixa alcance o nome, e nas telas largas
-— onde `--card-gap` já cobre a cauda — o `max()` zera o recuo e nada muda. A
-suíte recalcula a borda da diagonal (`polygon(0 0, 100% 0, 58% 100%, 0 100%)`, ou
-seja de 100% no topo a 58% na base) na altura da primeira linha do nome e exige
-invasão ≤ 0 em cada viewport do §50.
+— onde `--card-gap` já cobre a cauda — o `max()` reduz o recuo ao respiro.
+
+O `--band-folga: 6px` **não é preciosismo**, e a primeira versão não o tinha: sem
+ele a conta fecha exatamente em zero, e zero quer dizer a diagonal vermelha
+encostada na primeira letra do nome. Foi o que apareceu na tela em 320×568, com
+0,3px de folga medida - e a asserção da época, que exigia apenas "invasão ≤ 0",
+passava feliz. Hoje ela exige **≤ -4px**: texto não encosta em forma colorida.
+
+A suíte recalcula a borda da diagonal (`polygon(0 0, 100% 0, 58% 100%, 0 100%)`,
+ou seja de 100% no topo a 58% na base) na altura da primeira linha do nome e
+exige essa folga em cada viewport do §50.
 
 ## 59.7. Fotos — locais, todas as 19.830
 
@@ -2780,6 +2787,17 @@ O par aparece **só** quando a URL trouxe uma cola e nada foi decidido ainda
 altura de cabeçalho. Medido: 20-21px de altura, uma linha só, zero overflow, de
 320px a 430px.
 
+**E ele não sumia nunca.** `.refazer-par` é `display: flex`, e `display` de autor
+vence o `[hidden] { display: none }` do navegador - a mesma armadilha do
+`<dialog>` documentada em 59.10, agora na segunda vez. Faltava
+`.refazer-par[hidden] { display: none; }`.
+
+O que deixou o defeito passar foi o **teste medindo a coisa errada**: ele
+verificava a propriedade `el.hidden`, que estava corretamente `true`, enquanto a
+tela mostrava o par com 21px de altura. Agora as asserções olham `display`
+computado e altura real, e uma delas exige que a propriedade e o que a tela
+mostra **concordem** - é o que teria pegado isso de primeira.
+
 ### O ponteiro que chama o toque
 
 Um ponteiro percorre os dois botões e, em cada parada, o **anel de toque pulsa
@@ -2979,12 +2997,37 @@ marcador, que virou `@@bALAO@@` e nunca casou na volta. O balão sumiu e ficou o
 marcador na tela. Proteger um trecho com um marcador que a própria transformação
 altera não protege nada.
 
-### Duas affordâncias que faltavam no card
+### Duas affordâncias que faltavam no card - e uma delas quebrou o iPhone
 
 Achados de graça na exploração: o card **não tinha `cursor: pointer`** (no
 desktop o ponteiro não dizia que ali se clica) e **não tinha `:active`** - todos
-os botões têm `scale(.96)` e o card não dava retorno nenhum ao toque. Ganhou
-`scale(.994)`, bem mais discreto: o card é grande, e 4% ali seria um salto.
+os botões têm `scale(.96)` e o card não dava retorno nenhum ao toque.
+
+A primeira versão do retorno foi `transform: scale(.994)`, e ela **quebrou a
+digitação no iPhone**: o teclado começava a abrir e fechava na hora, perdendo o
+foco. A chegada do relato foi o que expôs o mecanismo:
+
+> o input mestre é `position: absolute; inset: 0` **dentro** do card. Um
+> `transform` num ancestral do campo focado cria um novo bloco contenedor, e a
+> lógica de "rolar até o campo focado" do iOS se perde e desiste do teclado. O
+> `:active` dispara justamente no toque, no mesmo instante do `focus()`.
+
+O retorno passou a ser por **cor** (`background`), que não cria bloco contenedor.
+Pela mesma razão o card e qualquer ancestral do input estão proibidos de
+`transform`, `filter`, `perspective`, `will-change: transform` e `contain` - a
+suíte varre as regras do `.card` procurando essas propriedades e falha se alguma
+aparecer, além de conferir na prática, por um toque de verdade, que o foco
+**permanece** no input depois do toque.
+
+É o §56 em ação: digitação correta é a prioridade 1, cosmético é a última. Um
+efeito de 0,6% de escala não vale o teclado de ninguém.
+
+Nota de honestidade: não tenho iPhone físico aqui, então não reproduzi o defeito
+- o conserto ataca o suspeito mais forte, que também é o único que eu havia
+introduzido junto com o relato. O mecanismo está verificado do lado de cá: depois
+de um toque real, nenhum dos cinco ancestrais do input focado tem `transform`,
+`filter`, `perspective` ou `contain`. Se ainda acontecer, o próximo suspeito é o
+`body { overflow: hidden; height: 100dvh }` contra o *scroll-into-view* do iOS.
 
 ## 59.14. Publicação no GitHub Pages
 
@@ -3006,7 +3049,7 @@ Duas suítes, as duas no `npm test`:
   usuário canônico, plataforma vs. site próprio, TLD real, caminho vazio, dedupe
   e corte em cinco. Os casos do Lula, do Patrus e do Helton
   estão lá como regressão, com o nome deles no rótulo.
-- `tests/interacao.mjs` — **732 asserções passando**, cobrindo os §48/§50 e mais.
+- `tests/interacao.mjs` — **736 asserções passando**, cobrindo os §48/§50 e mais.
   A suíte sobe o servidor estático, acha o Chrome e dirige um navegador de
   verdade. Ela serve `tests/fixtures/data` (base fictícia fixa), **não** `data/`:
   atualizar a base real do TSE não pode quebrar teste.

@@ -241,8 +241,10 @@ for (const [w, h] of [[320,640],[360,800],[375,667],[390,844],[412,915],[430,932
   ok('ultimo card dentro da viewport', m.lastBottom <= m.innerH + 1, tag + ' (' + m.lastBottom.toFixed(1) + '/' + m.innerH + ')');
   ok('numero cabe no card', m.digitsFit, tag);
   ok('nome visivel', m.nameVisible, tag);
-  ok('faixa cromatica nao invade o nome',
-     m.invasaoDaFaixa === null || m.invasaoDaFaixa <= 0,
+  /* -4px e não 0: zero significa a diagonal encostada na primeira letra, que foi
+     exatamente o que apareceu na tela em 320x568 */
+  ok('faixa cromatica nao encosta no nome',
+     m.invasaoDaFaixa === null || m.invasaoDaFaixa <= -4,
      tag + ' (' + m.invasaoDaFaixa + 'px)');
   ok('tag/cargo/partido sem truncar', m.semTruncar, tag);
   ok('placa de estado no cabecalho, antes do compartilhar',
@@ -1530,7 +1532,11 @@ const lerRefazer = () => page.evaluate(() => {
   const deixar = document.getElementById('deixar-assim');
   const r = par.getBoundingClientRect();
   const rl = limpar.getBoundingClientRect(), rd = deixar.getBoundingClientRect();
-  return { visivel: !par.hidden,
+  /* display e altura, não a propriedade `hidden`: com `display: flex` de autor o
+     `hidden` não esconde nada, e a primeira versão do teste passava com o par
+     bem visível na tela */
+  return { visivel: getComputedStyle(par).display !== 'none' && r.height > 0,
+           propriedadeHidden: par.hidden,
            rotulos: [deixar.textContent.trim(), limpar.textContent.trim()],
            umaLinha: Math.abs(rl.top - rd.top) < 1,
            /* "deixar assim" vem primeiro: a saída conservadora antes da destrutiva */
@@ -1548,6 +1554,8 @@ eq('as duas escolhas, na ordem certa',
 ok('a conservadora vem primeiro', refazer.deixarPrimeiro);
 ok('as duas na mesma linha', refazer.umaLinha);
 ok('com o ponteiro chamando o toque', refazer.chamada);
+ok('a propriedade hidden e o que a tela mostra concordam',
+   refazer.visivel === !refazer.propriedadeHidden);
 
 /* O ponteiro faz o vaivem: para sobre um botao, o anel de toque pulsa ali, e ele
    vai para o outro. As posicoes sao percentagens fixas no CSS, entao o teste
@@ -1615,7 +1623,9 @@ eq('deixar assim nao mexe em numero nenhum', await page.evaluate(() => ({
   digitos: [...document.querySelectorAll('.card')].map(c =>
     [...c.querySelectorAll('.digit')].map(d => d.textContent || '-').join('')),
   url: location.search,
-  par: !document.getElementById('refazer-par').hidden,
+  par: (() => { const el = document.getElementById('refazer-par');
+    return getComputedStyle(el).display !== 'none' &&
+           el.getBoundingClientRect().height > 0; })(),
 })), { digitos: ['1313', '13131', '131', '132', '13', '31'],
        url: antesDeDeixar, par: false });
 /* e a ficha de ajuda entende que a cola agora e da pessoa: mesma flag */
@@ -1641,7 +1651,9 @@ const limpo = await page.evaluate(() => ({
   caret: document.querySelector('.digit.is-caret')?.dataset.index,
   inputFocado: document.activeElement.id,
   url: location.search,
-  visivel: !document.getElementById('refazer-par').hidden,
+  visivel: (() => { const el = document.getElementById('refazer-par');
+    return getComputedStyle(el).display !== 'none' &&
+           el.getBoundingClientRect().height > 0; })(),
 }));
 eq('zera os seis cargos', limpo.digitos, ['----', '-----', '---', '---', '--', '--']);
 eq('caret no primeiro digito do primeiro card', [limpo.cardFocado, limpo.caret], ['df', '0']);
@@ -1659,7 +1671,9 @@ const voltou = await page.evaluate(() => ({
   url: location.search,
   digitos: [...document.querySelectorAll('.card')].map(c =>
     [...c.querySelectorAll('.digit')].map(d => d.textContent || '-').join('')),
-  visivel: !document.getElementById('refazer-par').hidden,
+  visivel: (() => { const el = document.getElementById('refazer-par');
+    return getComputedStyle(el).display !== 'none' &&
+           el.getBoundingClientRect().height > 0; })(),
 }));
 eq('o voltar do navegador restaura a cola recebida', voltou.url, urlRecebida);
 eq('e os digitos voltam com ela', voltou.digitos,
@@ -1955,20 +1969,42 @@ await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
 await sleep(200);
 eq('o card diz que e clicavel pelo cursor',
    await page.evaluate(() => getComputedStyle(document.querySelector('.card')).cursor), 'pointer');
-ok('o card tem retorno de toque', await page.evaluate(() => {
-  /* :active não é inspecionável direto: procura a regra na folha de estilo */
-  for (const folha of document.styleSheets) {
-    for (const r of folha.cssRules) {
-      const texto = r.cssText || '';
-      if (texto.includes('.card:active') && texto.includes('scale')) return true;
-      if (r.cssRules) for (const inner of r.cssRules) {
-        const t = inner.cssText || '';
-        if (t.includes('.card:active') && t.includes('scale')) return true;
-      }
+/* O card dá retorno de toque, mas NUNCA por transform: o input mestre é
+   `position: absolute` dentro dele, e transform num ancestral do campo focado
+   faz o iOS abrir e fechar o teclado na hora. Vale para todo o caminho de
+   ancestrais do input, e para todas as propriedades que criam bloco
+   contenedor. */
+const retorno = await page.evaluate(() => {
+  const regras = [];
+  const juntar = lista => {
+    for (const r of lista) {
+      if (r.cssText) regras.push(r.cssText);
+      if (r.cssRules) juntar(r.cssRules);
     }
-  }
-  return false;
-}));
+  };
+  for (const folha of document.styleSheets) { try { juntar(folha.cssRules); } catch (_) {} }
+  const doCard = regras.filter(t => /\.card:active|\.card\.is-focused|^\.card\s*\{/.test(t));
+  const perigosas = /(^|[^-])transform\s*:|filter\s*:|perspective\s*:|will-change\s*:|contain\s*:/;
+  return {
+    temRetorno: doCard.some(t => t.includes(':active')),
+    porCor: doCard.some(t => t.includes(':active') &&
+      (t.includes('background') || t.includes('box-shadow'))),
+    perigosas: doCard.filter(t => perigosas.test(t.replace(/text-transform\s*:/g, ''))),
+    /* e, na prática: o input focado sobrevive a um toque no card */
+    focoSobrevive: null,
+  };
+});
+ok('o card tem retorno de toque', retorno.temRetorno);
+ok('e ele e por cor, nao por transform', retorno.porCor);
+eq('nenhuma propriedade que cria bloco contenedor no card', retorno.perigosas, []);
+
+/* prova de comportamento: tocar num digito foca e o foco PERMANECE */
+await page.click('.card[data-cargo="g"] .digit[data-index="0"]');
+await sleep(300);
+eq('o foco permanece depois do toque', await page.evaluate(() => ({
+  ativo: document.activeElement.id,
+  caret: document.querySelector('.card[data-cargo="g"] .digit.is-caret')?.dataset.index,
+})), { ativo: 'num-g', caret: '0' });
 
 console.log('\n== texto do compartilhamento');
 await page.goto(BASE + '?uf=sp&df=1313&s1=131&p=13', { waitUntil: 'networkidle0' });
