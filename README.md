@@ -2997,6 +2997,58 @@ marcador, que virou `@@bALAO@@` e nunca casou na volta. O balão sumiu e ficou o
 marcador na tela. Proteger um trecho com um marcador que a própria transformação
 altera não protege nada.
 
+### O teclado do iPhone, em duas rodadas
+
+**Rodada 1: o `transform`.** Ver a subseção seguinte - o `:active` do card com
+`scale(.994)` criava bloco contenedor sobre o input focado. Consertado, e o
+relato voltou: melhorou, mas não resolveu.
+
+**Rodada 2: a seleção.** O segundo relato veio com uma descrição que praticamente
+entregou o defeito:
+
+> vazio funciona normal, preenchido ainda fica assim. Para presidente e
+> governador, se for um clique lerdo já funciona. Para os outros precisa ser um
+> clique bem lerdo (~2s).
+
+Isso mapeia exatamente uma coisa no código: o **índice do dígito focado**. Num
+card vazio o foco vai para o índice 0; num card preenchido, para o último. E os
+cargos escalam junto:
+
+| cargo | dígitos | índice no card preenchido | relato |
+|---|---|---|---|
+| presidente, governador | 2 | 1 | toque lerdo já resolvia |
+| senador | 3 | 2 | só com ~2s |
+| dep. federal | 4 | 3 | só com ~2s |
+| dep. estadual | 5 | 4 | só com ~2s |
+
+O único lugar que usava esse índice era o `syncSink()`:
+
+```js
+input.setSelectionRange(i, i + 1);   // i = índice do dígito em edição
+```
+
+Selecionar num índice > 0 dentro de um input `opacity: 0` faz o iOS abrir o
+teclado e fechá-lo na hora.
+
+O conserto foi possível por uma constatação simples: **essa seleção é escrita e
+nunca lida**. O `handleBeforeInput()` sempre chama `preventDefault()` e tira o
+dígito alvo do `state.focus`; o `handleKeydown()` também. A seleção existe por um
+motivo só - dar ao teclado do Android algo para apagar, para ele emitir
+`deleteContentBackward` de forma confiável (§24) - e para isso qualquer posição
+serve. Então ela ficou fixa:
+
+```js
+input.setSelectionRange(0, 1);       // sempre o primeiro caractere
+```
+
+O caractere selecionado continua existindo (Android segue apagando), o iOS fica
+na única posição que ele já aceitava, e nada na lógica muda.
+
+A suíte agora trava a invariante: percorre **todos os dígitos de todos os seis
+cargos** e exige que a seleção seja sempre `(0, 1)`, que haja sempre exatamente
+um caractere selecionado, e que o backspace continue apagando - as três coisas
+juntas, porque cada uma sozinha permitiria quebrar as outras.
+
 ### Duas affordâncias que faltavam no card - e uma delas quebrou o iPhone
 
 Achados de graça na exploração: o card **não tinha `cursor: pointer`** (no
@@ -3049,7 +3101,7 @@ Duas suítes, as duas no `npm test`:
   usuário canônico, plataforma vs. site próprio, TLD real, caminho vazio, dedupe
   e corte em cinco. Os casos do Lula, do Patrus e do Helton
   estão lá como regressão, com o nome deles no rótulo.
-- `tests/interacao.mjs` — **736 asserções passando**, cobrindo os §48/§50 e mais.
+- `tests/interacao.mjs` — **739 asserções passando**, cobrindo os §48/§50 e mais.
   A suíte sobe o servidor estático, acha o Chrome e dirige um navegador de
   verdade. Ela serve `tests/fixtures/data` (base fictícia fixa), **não** `data/`:
   atualizar a base real do TSE não pode quebrar teste.

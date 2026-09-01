@@ -905,14 +905,30 @@ function focusDigit(key, index) {
   syncSink(cargo);
 }
 
-/* mantém o input mestre coerente com o estado e com um caractere selecionado */
+/* Mantém o input mestre coerente com o estado, com UM caractere selecionado -
+ * sempre o primeiro, nunca o do dígito em edição.
+ *
+ * A seleção tem um único papel: dar ao teclado do Android algo para apagar, para
+ * ele emitir `deleteContentBackward` de forma confiável (§24). Ela nunca é LIDA
+ * por nós - o `handleBeforeInput` sempre chama preventDefault() e tira o dígito
+ * alvo do `state.focus`. Ou seja, a posição da seleção é indiferente à lógica.
+ *
+ * E não é indiferente ao iPhone: selecionar num índice > 0 dentro de um input
+ * `opacity: 0` fazia o iOS abrir o teclado e fechar na hora. O relato mapeou o
+ * defeito com precisão - card vazio (índice 0) funcionava, e quanto MAIOR o
+ * índice, mais lento o toque precisava ser para o teclado sobreviver:
+ *
+ *     presidente e governador (2 dígitos, índice 1)  → toque lerdo já resolvia
+ *     senador, federal, estadual (3 a 5, índice 2-4) → só com ~2s de toque
+ *
+ * Fixando em (0, 1) o caractere selecionado continua existindo, o Android segue
+ * apagando, e o iOS fica na posição que ele já aceitava. */
 function syncSink(cargo) {
   const input = cargo.el.input;
   const valor = state.votes[cargo.key].map(d => (d === null ? VAZIO : d)).join('');
   if (input.value !== valor) input.value = valor;
   if (state.focus && state.focus.key === cargo.key) {
-    const i = state.focus.index;
-    try { input.setSelectionRange(i, i + 1); } catch (_) { /* sem seleção: ok */ }
+    try { input.setSelectionRange(0, 1); } catch (_) { /* sem seleção: ok */ }
   }
 }
 

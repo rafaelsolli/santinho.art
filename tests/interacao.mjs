@@ -1967,6 +1967,41 @@ await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile
 console.log('\n== affordancia de edicao no card');
 await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
 await sleep(200);
+/* A selecao do input mestre fica SEMPRE em (0,1), qualquer que seja o digito em
+   edicao: ela existe so para o teclado do Android ter o que apagar, e indice > 0
+   fazia o iOS derrubar o teclado (o relato mapeou: quanto maior o indice, mais
+   lento o toque precisava ser). Ninguem le essa selecao. */
+console.log('\n== selecao do input mestre (o defeito do teclado no iOS)');
+await page.goto(BASE + '?uf=sp&df=1313&de=13131&s1=131&s2=132&g=13&p=31',
+                { waitUntil: 'networkidle0' });
+await sleep(250);
+const selecoes = [];
+for (const [cargo, len] of [['df', 4], ['de', 5], ['s1', 3], ['s2', 3], ['g', 2], ['p', 2]]) {
+  for (let i = 0; i < len; i++) {
+    await page.click(`.card[data-cargo="${cargo}"] .digit[data-index="${i}"]`);
+    await sleep(40);
+    selecoes.push(await page.evaluate(k => {
+      const el = document.getElementById('num-' + k);
+      return [el.selectionStart, el.selectionEnd];
+    }, cargo));
+  }
+}
+eq('a selecao fica em (0,1) para todo digito de todo cargo',
+   [...new Set(selecoes.map(s => s.join('-')))], ['0-1']);
+/* o caractere selecionado continua existindo: e o que faz o Android emitir
+   deleteContentBackward (§24) */
+eq('sempre ha um caractere selecionado',
+   await page.evaluate(() => {
+     const el = document.getElementById('num-df');
+     return el.selectionEnd - el.selectionStart;
+   }), 1);
+/* e apagar segue funcionando, que e o motivo de a selecao existir */
+await page.click('.card[data-cargo="g"] .digit[data-index="1"]');
+await page.keyboard.press('Backspace');
+await sleep(150);
+eq('backspace ainda apaga o digito em edicao', (await read('g')).digits, '1_');
+
+
 eq('o card diz que e clicavel pelo cursor',
    await page.evaluate(() => getComputedStyle(document.querySelector('.card')).cursor), 'pointer');
 /* O card dá retorno de toque, mas NUNCA por transform: o input mestre é
