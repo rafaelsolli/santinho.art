@@ -51,7 +51,7 @@
     </button>
 
     <!-- aria-label mais descritivo que o rótulo visível, contendo-o (WCAG 2.5.3) -->
-    <button id="share" class="share" type="button" aria-label="Compartilhar minha cola eleitoral">
+    <button id="share" class="share" type="button" aria-label="compartilhar minha cola eleitoral">
       <svg viewBox="0 0 256 256" aria-hidden="true" fill="none" stroke="currentColor"
            stroke-width="17" stroke-linecap="round">
         <circle cx="176" cy="60" r="28" />
@@ -60,8 +60,32 @@
         <line x1="89" y1="115" x2="151" y2="73" />
         <line x1="89" y1="141" x2="151" y2="183" />
       </svg>
-      <span class="share-rotulo">Compartilhar</span>
+      <span class="share-rotulo">compartilhar</span>
     </button>
+  </div>
+
+  <!-- Duas escolhas, não uma instrução: quem lê entende, e quem só toca já
+       decidiu. O JS só mostra quando a URL trouxe uma cola e nada foi editado
+       ainda; tocar em qualquer um dos dois significa "agora a cola é minha" e
+       faz o par desaparecer. A seta é aria-hidden para o nome acessível conter o
+       rótulo visível (WCAG 2.5.3). -->
+  <div class="refazer-par" id="refazer-par" role="group"
+       aria-label="Esta cola veio de outra pessoa. O que você quer fazer?" hidden>
+    <button id="deixar-assim" class="refazer refazer-secundario" type="button">
+      deixar assim
+    </button>
+    <button id="refazer" class="refazer" type="button">
+      limpar tudo e fazer a minha <span aria-hidden="true">→</span>
+    </button>
+    <!-- ponteiro chamando o toque, com o mesmo anel de toque das figuras da
+         ficha de ajuda: o anel viaja junto e pulsa em cada parada -->
+    <span class="refazer-chamada" aria-hidden="true">
+      <span class="refazer-anel"></span>
+      <svg viewBox="0 0 24 24">
+        <path d="M5 2 L5 18.4 L9.4 14.2 L12 20.8 L15.1 19.5 L12.5 13.1 L18.4 12.7 Z"
+              fill="var(--ink)" stroke="var(--card)" stroke-width="1.7" stroke-linejoin="round" />
+      </svg>
+    </span>
   </div>
 
   <p class="status" id="status" role="status" aria-live="polite"></p>
@@ -70,6 +94,20 @@
 <main class="cards" id="cards"></main>
 
 <footer class="rodape">
+  <!-- Só o ícone: com rótulo, a terceira aba estouraria a largura do rodapé em
+       320px, que é flex sem wrap e com rótulos em nowrap. Sem rótulo visível o
+       WCAG 2.5.3 não se aplica, e o nome acessível vem do aria-label. -->
+  <button id="ajuda-trigger" class="ajuda-botao aba aba-icone" type="button"
+          aria-haspopup="dialog" aria-expanded="false" aria-label="Como funciona">
+    <svg viewBox="0 0 256 256" aria-hidden="true" fill="none" stroke="currentColor"
+         stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="128" cy="128" r="94" />
+      <line x1="128" y1="122" x2="128" y2="180" />
+      <!-- linha de comprimento zero com ponta redonda: é o pingo do "i" -->
+      <line x1="128" y1="78" x2="128" y2="78" />
+    </svg>
+  </button>
+
   <!-- o rótulo fica DENTRO do botão: texto ao lado não seria clicável -->
   <button id="uf-trigger" class="uf-trigger aba" type="button" aria-haspopup="dialog" aria-expanded="false">
     <!-- alfinete de mapa, equivalente ao MapPin (Phosphor), desenhado inline -->
@@ -89,6 +127,7 @@
     </svg>
     <span class="rotulo-botao">buscar por nome</span>
   </button>
+
 </footer>
 
 <dialog id="uf-dialog" class="uf-dialog" aria-labelledby="uf-dialog-title">
@@ -141,6 +180,333 @@
   <div class="filtros-chips filtros-partidos" id="busca-filtros-partidos" role="group" aria-label="Filtrar candidatos por partido"></div>
   <p class="busca-contagem" id="busca-contagem" role="status" aria-live="polite"></p>
   <ul class="busca-lista" id="busca-lista"></ul>
+ </div>
+</dialog>
+
+<dialog id="ajuda-dialog" class="uf-dialog ajuda-dialog" aria-labelledby="ajuda-titulo">
+ <div class="folha-corpo">
+  <div class="uf-dialog-head ajuda-head">
+    <h2 class="ajuda-titulo" id="ajuda-titulo">como funciona</h2>
+    <button id="ajuda-close" class="uf-close" type="button" aria-label="Fechar">
+      <svg viewBox="0 0 256 256" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="24" stroke-linecap="round">
+        <line x1="72" y1="72" x2="184" y2="184" /><line x1="184" y1="72" x2="72" y2="184" />
+      </svg>
+    </button>
+  </div>
+
+  <div class="ajuda-corpo" id="ajuda-corpo" tabindex="-1">
+    <!-- Boas-vindas, sempre visível. Todos os exemplos daqui para baixo usam
+         números e nomes que NÃO existem na base (família 99, que não é número de
+         partido nenhum, e "alecrim dourado"): exemplo com candidato real daria
+         aparência de viés (§46). -->
+    <section class="ajuda-bloco ajuda-abertura">
+      <h3>bem-vindo ao santinho.art</h3>
+      <p>aqui você monta a sua <strong>cola eleitoral</strong> para 2026: os seis
+         votos, na ordem da urna, com o nome, o partido e a foto de cada candidato
+         aparecendo conforme você digita</p>
+      <figure class="ajuda-fig">
+        <div class="fig-palco" aria-hidden="true">
+          <div class="fig-santinho">
+            <span class="fig-santinho-foto"></span>
+            <span class="fig-santinho-ident">
+              <span class="fig-santinho-nome">alecrim dourado</span>
+              <span class="fig-santinho-cargo">dep. federal</span>
+            </span>
+            <span class="fig-santinho-num">
+              <i>9</i><i>9</i><i class="fig-sep-mini"></i><i>8</i><i>7</i>
+            </span>
+          </div>
+        </div>
+        <figcaption>nada impresso: a sua cola vira um link, e você compartilha com
+          quem quiser</figcaption>
+      </figure>
+    </section>
+
+    <!-- só para quem chegou por um link com números na URL -->
+    <section class="ajuda-bloco ajuda-abertura" id="ajuda-recebida" hidden>
+      <h3>essa colinha é de oooutra pessoa!</h3>
+      <p>mas agora ela também é <strong>sua</strong>, e você pode editar o quanto
+         quiser</p>
+      <p>no topo da tela tem as duas saídas: <strong>deixar assim</strong>, para
+         ficar com a cola como ela veio, ou <strong>limpar tudo e fazer a
+         minha</strong>, para começar do zero</p>
+      <figure class="ajuda-fig">
+        <div class="fig-palco fig-escolha" aria-hidden="true">
+          <span class="fig-refazer fig-refazer-2">deixar assim</span>
+          <span class="fig-refazer">limpar tudo e fazer a minha →</span>
+          <span class="fig-cursor fig-cursor-vaivem" role="presentation">
+            <span class="refazer-anel"></span>
+            <svg viewBox="0 0 24 24">
+              <path d="M5 2 L5 18.4 L9.4 14.2 L12 20.8 L15.1 19.5 L12.5 13.1 L18.4 12.7 Z"
+                    fill="var(--ink)" stroke="var(--card)" stroke-width="1.7" stroke-linejoin="round" />
+            </svg>
+          </span>
+        </div>
+        <figcaption>escolhendo qualquer um dos dois, a cola passa a ser sua e o
+          par desaparece</figcaption>
+      </figure>
+    </section>
+
+    <section class="ajuda-bloco">
+      <h3>primeiro, o seu estado</h3>
+      <p>a urna é diferente em cada estado: <strong>deputado federal, deputado
+         estadual, senador e governador</strong> são candidatos do seu estado, e só
+         aparecem se você estiver no estado certo. presidente é nacional e não
+         muda</p>
+      <p>então comece por aqui: toque em <strong>trocar estado</strong>, no rodapé,
+         e escolha o seu. os quatro cargos estaduais se revalidam na hora - se um
+         número não existir no novo estado, o card avisa</p>
+      <figure class="ajuda-fig">
+        <div class="fig-palco fig-estado" aria-hidden="true">
+          <span class="fig-placa">
+            <span class="fig-bandeiras">
+              <img src="assets/flags/SP.png" alt="" width="30" height="21" loading="lazy" decoding="async">
+              <img src="assets/flags/MG.png" alt="" width="30" height="21" loading="lazy" decoding="async">
+            </span>
+            <span class="fig-siglas"><span>SP</span><span>MG</span></span>
+          </span>
+          <span class="fig-aba fig-alvo">
+            <svg viewBox="0 0 256 256" fill="none" stroke="currentColor"
+                 stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M128 36c-38 0-68 30-68 68 0 52 68 116 68 116s68-64 68-116c0-38-30-68-68-68Z" />
+              <circle cx="128" cy="102" r="24" />
+            </svg>
+            <span class="fig-aba-rotulo">trocar estado</span>
+            <span class="fig-toque"></span>
+            <svg class="fig-cursor" viewBox="0 0 24 24">
+              <path d="M5 2 L5 18.4 L9.4 14.2 L12 20.8 L15.1 19.5 L12.5 13.1 L18.4 12.7 Z"
+                    fill="var(--ink)" stroke="var(--card)" stroke-width="1.7" stroke-linejoin="round" />
+            </svg>
+          </span>
+        </div>
+        <figcaption>a sigla e a bandeira no topo da tela mostram onde você está</figcaption>
+      </figure>
+    </section>
+
+    <section class="ajuda-bloco">
+      <h3>depois, os números</h3>
+      <p>toque num dígito e digite. ele fica marcado, recebe o que você digitar e
+         o cursor segue para o lado sozinho - dá para corrigir só um dígito no meio
+         do número, sem apagar o resto</p>
+      <figure class="ajuda-fig">
+        <div class="fig-palco" aria-hidden="true">
+          <div class="fig-digitos">
+            <span class="fig-digito">9</span>
+            <span class="fig-digito">9</span>
+            <span class="fig-sep"></span>
+            <span class="fig-digito is-caret">8
+              <span class="fig-toque"></span>
+              <svg class="fig-cursor" viewBox="0 0 24 24">
+              <path d="M5 2 L5 18.4 L9.4 14.2 L12 20.8 L15.1 19.5 L12.5 13.1 L18.4 12.7 Z"
+                    fill="var(--ink)" stroke="var(--card)" stroke-width="1.7" stroke-linejoin="round" />
+            </svg>
+            </span>
+            <span class="fig-digito is-vazio">-</span>
+          </div>
+        </div>
+        <figcaption>os dois primeiros dígitos são o partido; o pontilhado marca
+          onde eles terminam</figcaption>
+      </figure>
+    </section>
+
+    <section class="ajuda-bloco">
+      <h3>só os dois primeiros: voto de legenda</h3>
+      <p>para deputado federal e estadual, digitar <strong>só os dois dígitos do
+         partido</strong> e parar ali é voto de legenda: vale para a bancada do
+         partido, sem escolher um nome</p>
+      <figure class="ajuda-fig">
+        <div class="fig-palco" aria-hidden="true">
+          <div class="fig-digitos">
+            <span class="fig-digito">9</span>
+            <span class="fig-digito">9</span>
+            <span class="fig-sep"></span>
+            <span class="fig-digito is-vazio">-</span>
+            <span class="fig-digito is-vazio">-</span>
+          </div>
+          <span class="fig-tag">voto de legenda</span>
+        </div>
+        <figcaption>o card diz com palavras o que aconteceu, em vez de parecer
+          incompleto</figcaption>
+      </figure>
+    </section>
+
+    <section class="ajuda-bloco">
+      <h3>e quando o número não existe</h3>
+      <p>se o número não corresponder a nenhuma candidatura no seu estado, o card
+         mostra <strong>inválido</strong> - e continua editável e compartilhável.
+         nada é apagado sem você pedir</p>
+      <figure class="ajuda-fig">
+        <div class="fig-palco" aria-hidden="true">
+          <div class="fig-digitos">
+            <span class="fig-digito">9</span>
+            <span class="fig-digito">9</span>
+            <span class="fig-sep"></span>
+            <span class="fig-digito">1</span>
+            <span class="fig-digito">2</span>
+          </div>
+          <span class="fig-tag">inválido</span>
+        </div>
+        <figcaption>pode ser erro de digitação, pode ser candidatura de outro
+          estado - de qualquer jeito, é só corrigir o dígito</figcaption>
+      </figure>
+    </section>
+
+    <section class="ajuda-bloco">
+      <h3>não sabe o número?</h3>
+      <p>busque pelo nome. o resultado já entra no cargo certo, e você não precisa
+         saber de cabeça o número de ninguém</p>
+      <figure class="ajuda-fig">
+        <div class="fig-palco fig-busca" aria-hidden="true">
+          <span class="fig-campo">
+            <svg viewBox="0 0 256 256" fill="none" stroke="currentColor"
+                 stroke-width="22" stroke-linecap="round">
+              <circle cx="112" cy="112" r="68" /><line x1="161" y1="161" x2="212" y2="212" />
+            </svg>
+            <span class="fig-digitando"><i>alecrim</i></span>
+          </span>
+          <span class="fig-resultado">
+            <span class="fig-resultado-nome">alecrim dourado</span>
+            <span class="fig-resultado-num">9987</span>
+          </span>
+        </div>
+        <figcaption>acentos e maiúsculas não importam, e nomes parecidos também
+          aparecem</figcaption>
+      </figure>
+    </section>
+
+    <section class="ajuda-bloco">
+      <h3>por fim, compartilhar</h3>
+      <p>o botão no topo manda a sua cola em três formatos de uma vez: o
+         <strong>link</strong> com os seus números, um <strong>texto</strong> para
+         colar na conversa e uma <strong>imagem</strong> no formato de stories</p>
+      <figure class="ajuda-fig">
+        <div class="fig-palco fig-compartilhar" aria-hidden="true">
+          <span class="fig-share fig-alvo">
+            <svg viewBox="0 0 256 256" fill="none" stroke="currentColor"
+                 stroke-width="17" stroke-linecap="round">
+              <circle cx="176" cy="60" r="28" /><circle cx="176" cy="196" r="28" />
+              <circle cx="64" cy="128" r="28" />
+              <line x1="89" y1="115" x2="151" y2="73" />
+              <line x1="89" y1="141" x2="151" y2="183" />
+            </svg>
+            <span class="fig-share-rotulo">compartilhar</span>
+            <span class="fig-toque"></span>
+            <svg class="fig-cursor" viewBox="0 0 24 24">
+              <path d="M5 2 L5 18.4 L9.4 14.2 L12 20.8 L15.1 19.5 L12.5 13.1 L18.4 12.7 Z"
+                    fill="var(--card)" stroke="var(--ink)" stroke-width="1.7" stroke-linejoin="round" />
+            </svg>
+          </span>
+
+          <!-- balão de mensagem enviada, com rabinho, hora e os dois tiques,
+               saindo do avatar de quem mandou -->
+          <div class="fig-saida">
+            <div class="fig-balao">
+              <b>Minha cola eleitoral 2026 - SP</b>
+              <span>Dep. federal · 9987</span>
+              <span>Governador · 99</span>
+              <span class="fig-balao-chamada">vem conhecer meus candidatos e fazer a sua também:</span>
+              <span class="fig-balao-link">santinho.art/?uf=sp&amp;df=9987…</span>
+              <span class="fig-balao-rodape">
+                14:32
+                <svg viewBox="0 0 20 12" fill="none" stroke="currentColor"
+                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 7 L4 10 L10.5 2.5" /><path d="M8 7 L11 10 L17.5 2.5" />
+                </svg>
+              </span>
+            </div>
+            <!-- avatar de quem manda, encostado na base do balão: é de lá que o
+                 balão sai na animação -->
+            <span class="fig-avatar">
+              <svg viewBox="0 0 32 32" aria-hidden="true">
+                <circle cx="16" cy="16" r="16" fill="color-mix(in srgb, var(--neutral) 32%, var(--card))" />
+                <circle cx="16" cy="12.5" r="5.2" fill="var(--card)" />
+                <path d="M5.6 28.5a10.9 10.9 0 0 1 20.8 0Z" fill="var(--card)" />
+              </svg>
+            </span>
+          </div>
+        </div>
+        <figcaption>quem receber abre a sua cola já preenchida - e pode editar,
+          como você está fazendo agora</figcaption>
+      </figure>
+    </section>
+
+    <section class="ajuda-bloco ajuda-privacidade">
+      <h3>e a sua privacidade</h3>
+      <figure class="ajuda-fig">
+        <div class="fig-palco fig-privacidade" aria-hidden="true">
+          <span class="fig-fone">
+            <span class="fig-fone-barra">?uf=sp&amp;df=9987</span>
+            <span class="fig-fone-tela"><i></i><i></i><i></i></span>
+            <span class="fig-fuga"></span>
+          </span>
+          <span class="fig-barreira">
+            <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="3"
+                 stroke-linecap="round">
+              <circle cx="20" cy="20" r="15" stroke-dasharray="3 4" />
+              <line x1="10" y1="30" x2="30" y2="10" />
+            </svg>
+          </span>
+          <span class="fig-nuvem">servidor</span>
+        </div>
+        <figcaption>os seus números ficam na barra de endereço e não saem do
+          aparelho</figcaption>
+      </figure>
+      <p><strong>este site não tem servidor.</strong> são arquivos estáticos: a
+         página roda inteira no seu navegador e é ele que lê a base do TSE</p>
+      <p>é por isso que compartilhar é só mandar o link: ele já carrega os seus
+         números</p>
+      <p>não há login, conta, cookie de rastreamento nem analytics. a única coisa
+         guardada no seu navegador é a preferência abaixo, de não mostrar esta
+         ficha de novo</p>
+      <p>e quem envia é você: o link, o texto e a imagem saem pelo aplicativo
+         que você escolher</p>
+    </section>
+    <section class="ajuda-bloco ajuda-fontes">
+      <h3>de onde vêm os dados</h3>
+      <figure class="ajuda-fig">
+        <div class="fig-palco fig-fluxo" aria-hidden="true">
+          <span class="fig-no">TSE</span>
+          <span class="fig-trilho"><i></i></span>
+          <span class="fig-no">arquivos<br>estáticos</span>
+          <span class="fig-trilho"><i></i></span>
+          <span class="fig-no fig-no-forte">seu<br>navegador</span>
+        </div>
+        <figcaption>a base oficial vira arquivos estáticos, e é o seu navegador
+          que os lê. não há servidor no meio</figcaption>
+      </figure>
+      <dl>
+        <dt>candidaturas, partidos e fotos</dt>
+        <dd>TSE, Dados Abertos - conjunto <code>consulta_cand_2026</code>
+          (<a href="https://dadosabertos.tse.jus.br/dataset/candidatos-2026"
+              target="_blank" rel="noopener noreferrer">dadosabertos.tse.jus.br</a>)
+          <span id="ajuda-base-data" class="ajuda-base-data"></span></dd>
+
+        <dt>redes sociais dos candidatos</dt>
+        <dd>TSE, conjunto <code>rede_social_candidato_2026</code>. é declaração do
+          próprio candidato; quando ele escreveu só o usuário, sem link, o
+          endereço é montado a partir dele</dd>
+
+        <dt>cores dos partidos</dt>
+        <dd>Wikidata, propriedade <code>P465</code>
+          (<a href="https://www.wikidata.org/wiki/Property:P465"
+              target="_blank" rel="noopener noreferrer">wikidata.org</a>), com
+          curadoria manual sigla por sigla</dd>
+
+        <dt>bandeiras dos estados</dt>
+        <dd>Wikimedia Commons</dd>
+      </dl>
+      <p class="ajuda-nota">a ordem dos cargos é a da urna. nada aqui é ranking:
+        as listas saem em ordem alfabética, o site não sugere candidato e não
+        ordena por relevância. os exemplos desta ficha usam números e nomes que
+        não pertencem a candidato nenhum</p>
+    </section>
+
+  </div>
+
+  <label class="ajuda-naomostrar">
+    <input type="checkbox" id="ajuda-nao-mostrar">
+    <span>não mostrar de novo</span>
+  </label>
  </div>
 </dialog>
 

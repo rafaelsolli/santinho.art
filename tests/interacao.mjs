@@ -121,6 +121,15 @@ const siglaNoCabecalho = () => page.$eval('#uf-sigla', e => e.textContent);
 /* a folha desce animada (~170ms) antes de o <dialog> fechar de fato */
 const esperarFolhaFechar = () => sleep(420);
 
+/* A ficha de ajuda abre sozinha na primeira visita e cobriria a tela em todo o
+ * resto da suíte, interceptando cliques. Marcamos a preferência "não mostrar de
+ * novo" uma vez: localStorage vale para a origem e sobrevive aos page.goto
+ * seguintes. Os testes da abertura automática limpam e repõem a chave. */
+const CHAVE_AJUDA = 'santinho:ajuda-oculta';
+const silenciarAjuda = () => page.evaluate(k => localStorage.setItem(k, '1'), CHAVE_AJUDA);
+await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+await silenciarAjuda();
+
 /* ------------------------------------------------- §50 viewports: sem scroll */
 console.log('\n== §50 viewports (zero scroll vertical, zero overflow horizontal)');
 for (const [w, h] of [[320,640],[360,800],[375,667],[390,844],[412,915],[430,932],
@@ -146,6 +155,28 @@ for (const [w, h] of [[320,640],[360,800],[375,667],[390,844],[412,915],[430,932
         return d.right <= r.right + 1 && d.left >= r.left;
       }),
       nameVisible: cards.every(c => c.querySelector('.name').getBoundingClientRect().width > 8),
+      /* A faixa cromática é absoluta e sem z-index: pinta acima do .ident e
+         esconderia o nome por baixo dela. O recorte é
+         polygon(0 0, 100% 0, 58% 100%), então a borda direita vai de 100% no
+         topo a 58% na base, linearmente. Mede-se a invasão na primeira linha do
+         nome, que é a que mais sobe quando a tela encurta. */
+      invasaoDaFaixa: (() => {
+        const bordaEm = (rect, y) => {
+          const t = Math.min(1, Math.max(0, (y - rect.top) / rect.height));
+          return rect.left + rect.width * (1 - 0.42 * t);
+        };
+        const vals = cards.map(c => {
+          const nome = c.querySelector('.name');
+          if (!nome || nome.hidden || !nome.textContent.trim()) return null;
+          const r = document.createRange();
+          r.selectNodeContents(nome);
+          const linhas = [...r.getClientRects()];
+          if (!linhas.length) return null;
+          const banda = c.querySelector('.band').getBoundingClientRect();
+          return bordaEm(banda, linhas[0].top) - linhas[0].left;
+        }).filter(v => v !== null);
+        return vals.length ? +Math.max(...vals).toFixed(1) : null;
+      })(),
       semTruncar: cards.every(c => {
         const alvos = [c.querySelector('.name'), c.querySelector('.office'), c.querySelector('.party')];
         return alvos.every(e => e.hidden || e.scrollWidth <= e.clientWidth + 1);
@@ -210,6 +241,9 @@ for (const [w, h] of [[320,640],[360,800],[375,667],[390,844],[412,915],[430,932
   ok('ultimo card dentro da viewport', m.lastBottom <= m.innerH + 1, tag + ' (' + m.lastBottom.toFixed(1) + '/' + m.innerH + ')');
   ok('numero cabe no card', m.digitsFit, tag);
   ok('nome visivel', m.nameVisible, tag);
+  ok('faixa cromatica nao invade o nome',
+     m.invasaoDaFaixa === null || m.invasaoDaFaixa <= 0,
+     tag + ' (' + m.invasaoDaFaixa + 'px)');
   ok('tag/cargo/partido sem truncar', m.semTruncar, tag);
   ok('placa de estado no cabecalho, antes do compartilhar',
      m.cromo.placaNoCabecalho && m.cromo.placaAntesDoShare, tag);
@@ -1229,7 +1263,12 @@ eq('o arquivo e um JPEG do santinho',
 ok('a imagem tem tamanho plausivel',
    comArquivo.share.arquivos[0].bytes > 40000 && comArquivo.share.arquivos[0].bytes < 900000,
    '(' + Math.round(comArquivo.share.arquivos[0].bytes / 1024) + ' KB)');
-eq('o link vai junto', comArquivo.share.url, await page.evaluate(() => location.href));
+/* o link vai DENTRO do texto, não no campo `url`: com os dois campos, o app de
+   destino gruda um no outro e come a linha em branco antes do link */
+ok('o link vai dentro do texto',
+   comArquivo.share.text.includes(await page.evaluate(() => location.href)),
+   JSON.stringify(comArquivo.share.text.slice(-80)));
+eq('sem campo url separado', comArquivo.share.url, undefined);
 ok('o texto lista os votos', comArquivo.share.text.includes('Dep. federal · 1313'),
    JSON.stringify(comArquivo.share.text.slice(0, 60)));
 eq('nao copia nem baixa quando compartilhou',
@@ -1240,7 +1279,8 @@ const texto = comArquivo.share.text;
 const linhas = texto.split('\n').filter(Boolean);
 eq('cabecalho da cola', linhas[0], 'Minha cola eleitoral 2026 - SP');
 eq('titulo com maiuscula', texto.startsWith('Minha cola'), true);
-eq('uma linha por cargo preenchido', linhas.length - 1, 5);
+/* linhas úteis: cabeçalho + 5 cargos + chamada + link */
+eq('uma linha por cargo preenchido', linhas.length - 3, 5);
 ok('cargo e numero, em caixa normal',
    linhas.includes('Dep. federal · 1313'), JSON.stringify(linhas));
 ok('legenda entra so com o numero do partido',
@@ -1248,6 +1288,11 @@ ok('legenda entra so com o numero do partido',
 ok('numero inexistente entra igual',
    linhas.includes('2º senador · 999'), JSON.stringify(linhas));
 ok('cargo vazio nao entra na cola', !texto.includes('Presidente'));
+ok('chamada antes do link, colada nele',
+   texto.includes('vem conhecer meus candidatos e fazer a sua também:\nhttp'),
+   JSON.stringify(texto.slice(-120)));
+ok('linha em branco entre o ultimo voto e a chamada',
+   /\n\nvem conhecer/.test(texto), JSON.stringify(texto.slice(-160)));
 ok('votos em linhas seguidas, sem branco entre eles',
    texto.includes('· 1313\nDep. estadual'), JSON.stringify(texto.slice(0, 120)));
 ok('linha em branco entre titulo e votos', texto.includes('- SP\n\nDep. federal'),
@@ -1277,7 +1322,11 @@ await sleep(400);
 const semShare = await resultado();
 ok('copia a cola inteira', semShare.copiado && semShare.copiado.includes('Dep. federal · 1313'));
 ok('copia o link no fim', semShare.copiado.trim().endsWith(await page.evaluate(() => location.href)));
-ok('linha em branco antes do link', semShare.copiado.includes('\n\n' + await page.evaluate(() => location.href)));
+ok('chamada antes do link, precedida de linha em branco',
+   /\n\nvem conhecer meus candidatos e fazer a sua também:\nhttp/.test(semShare.copiado),
+   JSON.stringify(semShare.copiado.slice(-120)));
+ok('a area de transferencia recebe o mesmo texto do share nativo',
+   semShare.copiado === await page.evaluate(() => textoParaCompartilhar(location.href)));
 eq('baixa a imagem', semShare.baixado && semShare.baixado.nome, 'santinho-sp.jpg');
 eq('feedback conta as duas coisas',
    await page.$eval('#toast', e => e.hidden ? null : e.textContent),
@@ -1302,8 +1351,8 @@ eq('a imagem volta a ficar pronta sozinha',
    (await resultado()).share.arquivos.length, 1);
 
 /* aria continua descrevendo o botao */
-eq('aria-label no botao', await page.$eval('#share', e => e.getAttribute('aria-label')), 'Compartilhar minha cola eleitoral');
-eq('rotulo visivel no botao', await page.$eval('.share-rotulo', e => e.textContent), 'Compartilhar');
+eq('aria-label no botao', await page.$eval('#share', e => e.getAttribute('aria-label')), 'compartilhar minha cola eleitoral');
+eq('rotulo visivel no botao', await page.$eval('.share-rotulo', e => e.textContent), 'compartilhar');
 ok('rotulo visivel contido no acessivel (WCAG 2.5.3)', await page.$eval('#share',
    e => e.getAttribute('aria-label').includes(e.querySelector('.share-rotulo').textContent)));
 eq('botao de estado diz o que faz', await page.$eval('#uf-trigger .rotulo-botao', e => e.textContent),
@@ -1468,6 +1517,484 @@ ok('margem lateral esquerda de 20px ou mais', img.esq >= 20, img.esq + 'px');
 ok('margem lateral direita de 20px ou mais', 1080 - img.dir >= 20, (1080 - img.dir) + 'px');
 
 /* --------------------------------------------------------------- favicon */
+/* ------------------------------------------- cola recebida é editável (§55) */
+console.log('\n== botao de limpar e fazer a minha');
+await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+const URL_RECEBIDA = BASE + '?uf=sp&df=1313&de=13131&s1=131&s2=132&g=13&p=31';
+await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+await sleep(200);
+
+const lerRefazer = () => page.evaluate(() => {
+  const par = document.getElementById('refazer-par');
+  const limpar = document.getElementById('refazer');
+  const deixar = document.getElementById('deixar-assim');
+  const r = par.getBoundingClientRect();
+  const rl = limpar.getBoundingClientRect(), rd = deixar.getBoundingClientRect();
+  return { visivel: !par.hidden,
+           rotulos: [deixar.textContent.trim(), limpar.textContent.trim()],
+           umaLinha: Math.abs(rl.top - rd.top) < 1,
+           /* "deixar assim" vem primeiro: a saída conservadora antes da destrutiva */
+           deixarPrimeiro: rd.left < rl.left,
+           chamada: Boolean(document.querySelector('.refazer-chamada')),
+           dentro: r.right <= innerWidth + 0.5 && r.left >= -0.5,
+           abaixoDosControles: r.top >= document.querySelector('.controls').getBoundingClientRect().bottom - 0.5,
+           acimaDosCards: r.bottom <= document.querySelector('.cards').getBoundingClientRect().top + 0.5 };
+});
+const refazer = await lerRefazer();
+ok('aparece quando a URL trouxe uma cola', refazer.visivel);
+eq('as duas escolhas, na ordem certa',
+   refazer.rotulos.map(t => t.replace(/\s*→$/, '')),
+   ['deixar assim', 'limpar tudo e fazer a minha']);
+ok('a conservadora vem primeiro', refazer.deixarPrimeiro);
+ok('as duas na mesma linha', refazer.umaLinha);
+ok('com o ponteiro chamando o toque', refazer.chamada);
+
+/* O ponteiro faz o vaivem: para sobre um botao, o anel de toque pulsa ali, e ele
+   vai para o outro. As posicoes sao percentagens fixas no CSS, entao o teste
+   confere que elas caem sobre o botao certo em cada largura - nao adianta o
+   gesto se ele aponta para o vazio. O ponteiro em si nunca desaparece: quem
+   pulsa e o anel. */
+for (const w of [320, 360, 390, 430]) {
+  await page.setViewport({ width: w, height: 800, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+  await sleep(250);
+  const gesto = await page.evaluate(() => {
+    const cur = document.querySelector('.refazer-chamada');
+    const anel = document.querySelector('.refazer-anel');
+    const em = ms => {
+      for (const a of document.getAnimations()) { a.pause(); a.currentTime = ms; }
+      const c = cur.getBoundingClientRect(), meio = c.left + c.width / 2;
+      const dentro = sel => { const b = document.querySelector(sel).getBoundingClientRect();
+        return meio >= b.left && meio <= b.right; };
+      const ar = anel.getBoundingClientRect();
+      return { sobre: dentro('#deixar-assim') ? 'deixar' : dentro('#refazer') ? 'limpar' : 'fora',
+               ponteiro: Number(getComputedStyle(cur).opacity),
+               anel: Number(getComputedStyle(anel).opacity),
+               anelNoPonteiro: Math.abs((ar.left + ar.width / 2) - meio) < 1.5 };
+    };
+    /* ciclo de 4,4s: pulso no 1o em ~3%, viagem em ~33%, pulso no 2o em ~46% */
+    return { pulsoNoPrimeiro: em(132), viajando: em(1452), pulsoNoSegundo: em(2024) };
+  });
+  ok('anel pulsa sobre "deixar assim"',
+     gesto.pulsoNoPrimeiro.sobre === 'deixar' && gesto.pulsoNoPrimeiro.anel > 0.5, w + 'px');
+  ok('anel pulsa sobre "limpar tudo"',
+     gesto.pulsoNoSegundo.sobre === 'limpar' && gesto.pulsoNoSegundo.anel > 0.4, w + 'px');
+  ok('anel apagado durante a viagem', gesto.viajando.anel < 0.05, w + 'px');
+  ok('anel centrado no ponteiro', gesto.pulsoNoPrimeiro.anelNoPonteiro &&
+     gesto.pulsoNoSegundo.anelNoPonteiro, w + 'px');
+  ok('o ponteiro nunca desaparece',
+     [gesto.pulsoNoPrimeiro, gesto.viajando, gesto.pulsoNoSegundo]
+       .every(g => g.ponteiro === 1), w + 'px');
+}
+await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+await sleep(250);
+ok('dentro da tela', refazer.dentro);
+ok('entre os controles do topo e os cards',
+   refazer.abaixoDosControles && refazer.acimaDosCards);
+
+await page.goto(BASE + '?uf=sp', { waitUntil: 'networkidle0' });
+await sleep(200);
+eq('nao aparece em visita limpa', (await lerRefazer()).visivel, false);
+
+/* some no primeiro toque em dígito: a essa altura a pessoa já descobriu */
+await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+await sleep(200);
+await page.click('.card[data-cargo="g"] .digit[data-index="0"]');
+await page.keyboard.press('4');
+await sleep(150);
+eq('some depois da primeira edicao', (await lerRefazer()).visivel, false);
+
+/* "deixar assim" é a saída não destrutiva: assume a cola sem tocar em número */
+await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+await sleep(200);
+const antesDeDeixar = await page.evaluate(() => location.search);
+await page.click('#deixar-assim');
+await sleep(200);
+eq('deixar assim nao mexe em numero nenhum', await page.evaluate(() => ({
+  digitos: [...document.querySelectorAll('.card')].map(c =>
+    [...c.querySelectorAll('.digit')].map(d => d.textContent || '-').join('')),
+  url: location.search,
+  par: !document.getElementById('refazer-par').hidden,
+})), { digitos: ['1313', '13131', '131', '132', '13', '31'],
+       url: antesDeDeixar, par: false });
+/* e a ficha de ajuda entende que a cola agora e da pessoa: mesma flag */
+await page.evaluate(k => localStorage.removeItem(k), CHAVE_AJUDA);
+await page.click('#ajuda-trigger');
+await sleep(250);
+eq('a secao da cola recebida sai da ficha depois de decidir',
+   await page.evaluate(() => document.getElementById('ajuda-recebida').hidden), true);
+await page.keyboard.press('Escape');
+await esperarFolhaFechar();
+await silenciarAjuda();
+
+/* o clique: zera tudo, põe caret no primeiro dígito e foca o input de verdade */
+await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+await sleep(200);
+const urlRecebida = await page.evaluate(() => location.search);
+await page.click('#refazer');
+await sleep(250);
+const limpo = await page.evaluate(() => ({
+  digitos: [...document.querySelectorAll('.card')].map(c =>
+    [...c.querySelectorAll('.digit')].map(d => d.textContent || '-').join('')),
+  cardFocado: document.querySelector('.card.is-focused')?.dataset.cargo,
+  caret: document.querySelector('.digit.is-caret')?.dataset.index,
+  inputFocado: document.activeElement.id,
+  url: location.search,
+  visivel: !document.getElementById('refazer-par').hidden,
+}));
+eq('zera os seis cargos', limpo.digitos, ['----', '-----', '---', '---', '--', '--']);
+eq('caret no primeiro digito do primeiro card', [limpo.cardFocado, limpo.caret], ['df', '0']);
+/* dentro do gesto do usuário, então o input foca de verdade: no celular é isso
+   que abre o teclado, e é o sinal mais direto de "digite aqui" */
+eq('o input mestre do primeiro card fica focado', limpo.inputFocado, 'num-df');
+eq('a URL fica so com a UF', limpo.url, '?uf=sp');
+eq('o par de escolhas some depois de usado', limpo.visivel, false);
+
+/* é a única ação que empilha histórico: limpar a cola de alguém não tem desfazer
+   na tela, então o voltar do navegador é o desfazer */
+await page.goBack({ waitUntil: 'domcontentloaded' });
+await sleep(350);
+const voltou = await page.evaluate(() => ({
+  url: location.search,
+  digitos: [...document.querySelectorAll('.card')].map(c =>
+    [...c.querySelectorAll('.digit')].map(d => d.textContent || '-').join('')),
+  visivel: !document.getElementById('refazer-par').hidden,
+}));
+eq('o voltar do navegador restaura a cola recebida', voltou.url, urlRecebida);
+eq('e os digitos voltam com ela', voltou.digitos,
+   ['1313', '13131', '131', '132', '13', '31']);
+ok('e o botao volta com eles', voltou.visivel);
+
+console.log('\n== ficha de ajuda');
+/* a chave de storage está marcada desde o começo da suíte: limpa para testar a
+   abertura automática, e repõe no fim */
+await page.evaluate(k => localStorage.removeItem(k), CHAVE_AJUDA);
+await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+await sleep(700);
+const ajuda = await page.evaluate(() => {
+  const d = document.getElementById('ajuda-dialog');
+  const gatilho = document.getElementById('ajuda-trigger');
+  const abas = [...d.querySelectorAll('.folha-abas .aba')];
+  const rod = [...document.querySelectorAll('.rodape .aba')];
+  const r = gatilho.getBoundingClientRect();
+  return {
+    aberta: d.open,
+    recebida: !document.getElementById('ajuda-recebida').hidden,
+    boasVindas: document.querySelector('#ajuda-corpo section h3').textContent,
+    focoNoCorpo: document.activeElement === document.getElementById('ajuda-corpo'),
+    focoEmInput: ['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName),
+    ordemNaFicha: abas.map(a => a.dataset.aba),
+    ordemNoRodape: rod.map(a => a.id.replace('-trigger', '')),
+    ativa: d.querySelector('.aba.is-ativa')?.dataset.aba,
+    /* só ícone: nenhum rótulo visível, nome acessível pelo aria-label */
+    semRotulo: !gatilho.querySelector('.rotulo-botao'),
+    nomeAcessivel: gatilho.getAttribute('aria-label'),
+    alvo: [Math.round(r.width), Math.round(r.height)],
+    naoMostrarMarcado: document.getElementById('ajuda-nao-mostrar').checked,
+  };
+});
+ok('abre sozinha na primeira visita', ajuda.aberta);
+ok('boas-vindas em primeiro lugar, sempre',
+   ajuda.boasVindas.includes('bem-vindo'), ajuda.boasVindas);
+ok('secao da cola recebida visivel quando a URL trouxe numeros', ajuda.recebida);
+ok('foco no corpo rolavel, nao num campo', ajuda.focoNoCorpo && !ajuda.focoEmInput);
+eq('a aba de ajuda e a primeira, no rodape e na ficha',
+   [ajuda.ordemNoRodape, ajuda.ordemNaFicha],
+   [['ajuda', 'uf', 'busca'], ['ajuda', 'uf', 'busca']]);
+eq('a aba ativa e a da ajuda', ajuda.ativa, 'ajuda');
+ok('a aba de ajuda e so icone', ajuda.semRotulo);
+eq('com nome acessivel no aria-label', ajuda.nomeAcessivel, 'Como funciona');
+ok('alvo de toque de 24px ou mais nos dois eixos',
+   ajuda.alvo[0] >= 24 && ajuda.alvo[1] >= 24, JSON.stringify(ajuda.alvo));
+eq('checkbox desmarcado por padrao', ajuda.naoMostrarMarcado, false);
+
+/* as tres abas: mesma altura e alinhadas em x com o rodapé */
+const tresAbas = await page.evaluate(() => {
+  const rod = [...document.querySelectorAll('.rodape .aba')].map(a => a.getBoundingClientRect());
+  const fic = [...document.querySelectorAll('.folha-abas .aba')].map(a => a.getBoundingClientRect());
+  return {
+    alturasIguais: new Set(rod.map(r => Math.round(r.height))).size === 1,
+    alinhadas: rod.every((r, i) => Math.abs(r.x - fic[i].x) < 1.5 &&
+                                   Math.abs(r.width - fic[i].width) < 1.5),
+    /* a ativa funde no corpo; todas as inativas mantêm a sombra interna */
+    inativasComSombra: [...document.querySelectorAll('.folha-abas .aba:not(.is-ativa)')]
+      .every(a => getComputedStyle(a).boxShadow.includes('inset')),
+    quantasInativas: document.querySelectorAll('.folha-abas .aba:not(.is-ativa)').length,
+  };
+});
+ok('as tres abas do rodape com a mesma altura', tresAbas.alturasIguais);
+ok('as tres abas alinhadas em x com o rodape', tresAbas.alinhadas);
+ok('as duas abas inativas com sombra interna', tresAbas.inativasComSombra);
+eq('duas inativas, uma ativa', tresAbas.quantasInativas, 2);
+
+/* troca de folha entre as tres, sem animacao e sem fileira orfa */
+await page.click('.folha-abas .aba[data-aba="busca"]');
+await sleep(120);
+let trocaTres = await page.evaluate(() => ({
+  ativa: document.querySelector('.folha-abas .aba.is-ativa')?.dataset.aba,
+  abertas: ['ajuda-dialog', 'uf-dialog', 'busca-dialog'].filter(id => document.getElementById(id).open),
+  fileiras: document.querySelectorAll('.folha-abas').length,
+  animacoes: document.querySelector('dialog[open]').getAnimations().length,
+}));
+eq('da ajuda para a busca', [trocaTres.ativa, trocaTres.abertas], ['busca', ['busca-dialog']]);
+eq('sem fileira orfa na troca entre tres', trocaTres.fileiras, 1);
+eq('nenhuma animacao na troca entre tres', trocaTres.animacoes, 0);
+await page.click('.folha-abas .aba[data-aba="ajuda"]');
+await sleep(120);
+trocaTres = await page.evaluate(() => ({
+  ativa: document.querySelector('.folha-abas .aba.is-ativa')?.dataset.aba,
+  abertas: ['ajuda-dialog', 'uf-dialog', 'busca-dialog'].filter(id => document.getElementById(id).open),
+}));
+eq('e de volta para a ajuda', [trocaTres.ativa, trocaTres.abertas], ['ajuda', ['ajuda-dialog']]);
+
+/* Esc fecha */
+await page.keyboard.press('Escape');
+await esperarFolhaFechar();
+eq('Esc fecha a ficha de ajuda',
+   await page.evaluate(() => document.getElementById('ajuda-dialog').open), false);
+
+/* abertura diferente em visita limpa */
+await page.goto(BASE + '?uf=sp', { waitUntil: 'networkidle0' });
+await sleep(700);
+eq('em visita limpa a secao da cola recebida fica oculta', await page.evaluate(() => ({
+  aberta: document.getElementById('ajuda-dialog').open,
+  recebida: !document.getElementById('ajuda-recebida').hidden,
+  boasVindas: !document.querySelector('#ajuda-corpo section').hidden,
+})), { aberta: true, recebida: false, boasVindas: true });
+
+/* clicar fora fecha */
+await page.mouse.click(195, 60);
+await esperarFolhaFechar();
+eq('clicar fora fecha a ficha de ajuda',
+   await page.evaluate(() => document.getElementById('ajuda-dialog').open), false);
+
+/* checkbox grava e a ficha para de abrir sozinha, mas a aba continua abrindo */
+await page.click('#ajuda-trigger');
+await sleep(200);
+await page.click('#ajuda-nao-mostrar');
+await sleep(120);
+eq('marcar grava no localStorage',
+   await page.evaluate(k => localStorage.getItem(k), CHAVE_AJUDA), '1');
+await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+await sleep(700);
+eq('nao abre mais sozinha',
+   await page.evaluate(() => document.getElementById('ajuda-dialog').open), false);
+await page.click('#ajuda-trigger');
+await sleep(250);
+eq('mas a aba continua abrindo',
+   await page.evaluate(() => document.getElementById('ajuda-dialog').open), true);
+eq('e o checkbox aparece marcado',
+   await page.evaluate(() => document.getElementById('ajuda-nao-mostrar').checked), true);
+await page.keyboard.press('Escape');
+await esperarFolhaFechar();
+
+/* §44: sem storage o site não pode quebrar - só perde a memória da preferência.
+   Vai numa ABA PRÓPRIA: evaluateOnNewDocument acumula scripts em vez de
+   substituir, então instalar o stub na aba principal o deixaria ligado para o
+   resto da suíte (e foi exatamente o que aconteceu na primeira tentativa). */
+const abaSemStorage = await browser.newPage();
+await abaSemStorage.evaluateOnNewDocument(() => {
+  const lancar = () => { throw new Error('storage bloqueado'); };
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    get: () => ({ getItem: lancar, setItem: lancar, removeItem: lancar }),
+  });
+});
+const errosSemStorage = [];
+abaSemStorage.on('pageerror', e => errosSemStorage.push(String(e)));
+await abaSemStorage.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+await sleep(700);
+eq('localStorage bloqueado nao quebra nada', await abaSemStorage.evaluate(() => ({
+  cards: document.querySelectorAll('.card').length,
+  ajudaAberta: document.getElementById('ajuda-dialog').open,
+})), { cards: 6, ajudaAberta: true });
+eq('e nao solta erro de JS', errosSemStorage, []);
+await abaSemStorage.close();
+
+console.log('\n== figuras e caixa da ficha de ajuda');
+await page.evaluate(k => localStorage.removeItem(k), CHAVE_AJUDA);
+await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+await sleep(800);
+const fichaFig = await page.evaluate(() => {
+  const secoes = [...document.querySelectorAll('#ajuda-corpo section')];
+  const figs = [...document.querySelectorAll('.ajuda-fig')];
+  const primeira = t => (t.trim().match(/\p{L}/u) || [''])[0];
+  return {
+    /* TODA seção tem figura, inclusive as de abertura */
+    secoesSemFigura: secoes
+      .filter(sec => !sec.querySelector('.ajuda-fig'))
+      .map(sec => sec.querySelector('h3').textContent),
+    /* os exemplos não podem colidir com candidato de verdade: nenhum número da
+       ficha resolve na base carregada, e o prefixo usado não é partido */
+    colisoes: (() => {
+      const base = bases.get(state.uf), br = bases.get('BR');
+      const numeros = new Set();
+      for (const el of document.querySelectorAll('#ajuda-corpo .fig-digitos, ' +
+           '#ajuda-corpo .fig-santinho-num, #ajuda-corpo .fig-resultado-num, ' +
+           '#ajuda-corpo .fig-balao')) {
+        for (const n of el.textContent.match(/\d{2,}/g) || []) numeros.add(n);
+      }
+      const achados = [];
+      for (const n of numeros) {
+        for (const b of [base, br]) {
+          if (!b || !b.cargos) continue;
+          for (const [cargo, lista] of Object.entries(b.cargos)) {
+            if (lista[n]) achados.push(n + ' = ' + cargo + ' ' + lista[n].n);
+          }
+        }
+      }
+      return achados;
+    })(),
+    prefixoEhPartido: Boolean((bases.get(state.uf) || {}).partidos?.['99']),
+    figuras: figs.length,
+    /* o desenho é decorativo: o sentido vive na legenda, não na figura */
+    todasDecorativas: figs.every(f => {
+      const palco = f.querySelector('[aria-hidden="true"]');
+      return palco && f.querySelector('figcaption')?.textContent.trim().length > 20;
+    }),
+    /* Caixa: a ficha inteira fala em minúscula, inclusive depois de ponto. As
+       FIGURAS são a exceção, e por um motivo: elas copiam a interface, onde
+       `.name`, `.office` e a tag são text-transform: uppercase. Por isso a
+       varredura olha só os elementos de prosa - h3, dt, p, dd e figcaption. */
+    prosa: (() => {
+      const protegidas = new Set(['TSE', 'SP', 'MG', 'P465', 'Wikidata', 'Wikimedia', 'Dados']);
+      const els = [...document.querySelectorAll('#ajuda-corpo h3, #ajuda-corpo dt, ' +
+        '#ajuda-corpo p, #ajuda-corpo dd, #ajuda-corpo figcaption')];
+      const inicioMaiusculo = [], fraseMaiuscula = [], caixaAlta = [], comPontoFinal = [];
+      for (const el of els) {
+        const t = el.innerText.trim();
+        if (!t) continue;
+        const primeiraPalavra = (t.match(/^[\wÀ-ÿ]+/) || [''])[0];
+        if (/^[A-ZÀ-Ý]/.test(t) && !protegidas.has(primeiraPalavra)) {
+          inicioMaiusculo.push(t.slice(0, 34));
+        }
+        for (const m of t.matchAll(/[.!?]\s+([A-ZÀ-Ý][\wÀ-ÿ]*)/g)) {
+          if (!protegidas.has(m[1])) fraseMaiuscula.push(m[1]);
+        }
+        for (const w of t.match(/\b[A-ZÀ-Ý][A-ZÀ-Ý0-9]+\b/g) || []) {
+          if (!protegidas.has(w)) caixaAlta.push(w);
+        }
+        /* sem ponto final: a ficha fala como conversa. ? e ! continuam valendo */
+        if (t.endsWith('.')) comPontoFinal.push(t.slice(-34));
+      }
+      return { inicioMaiusculo, comPontoFinal,
+               fraseMaiuscula: [...new Set(fraseMaiuscula)],
+               caixaAlta: [...new Set(caixaAlta)] };
+    })(),
+    /* e as figuras continuam gritando junto com a interface */
+    figurasEmCaixaAlta: ['.fig-santinho-nome', '.fig-santinho-cargo',
+                         '.fig-resultado-nome', '.fig-tag']
+      .map(sel => [sel, getComputedStyle(document.querySelector(sel)).textTransform]),
+    tituloDaFicha: document.getElementById('ajuda-titulo').textContent,
+    /* a ficha não grita: nada em caixa alta além de sigla e acrônimo, e nada
+       vindo de text-transform tampouco */
+    caixaAlta: (() => {
+      const permitido = new Set(['TSE', 'SP', 'MG', 'P465']);
+      const texto = document.getElementById('ajuda-corpo').innerText;
+      return [...new Set(texto.match(/\b[A-ZÀ-Ý][A-ZÀ-Ý0-9]+\b/g) || [])]
+        .filter(p => !permitido.has(p));
+    })(),
+    /* as fontes ficam no fim */
+    ultimaSecao: [...document.querySelectorAll('#ajuda-corpo section')]
+      .pop().querySelector('h3').textContent,
+  };
+});
+eq('nenhuma secao sem figura', fichaFig.secoesSemFigura, []);
+eq('dez figuras, uma por secao', fichaFig.figuras, 10);
+eq('nenhum exemplo colide com candidato da base', fichaFig.colisoes, []);
+eq('o prefixo dos exemplos nao e numero de partido', fichaFig.prefixoEhPartido, false);
+ok('figuras decorativas, com o sentido na legenda', fichaFig.todasDecorativas);
+eq('nenhuma frase da prosa comeca com maiuscula', fichaFig.prosa.inicioMaiusculo, []);
+eq('nem depois de ponto', fichaFig.prosa.fraseMaiuscula, []);
+eq('nem em caixa alta, fora de sigla e acronimo', fichaFig.prosa.caixaAlta, []);
+eq('e nenhuma frase termina em ponto', fichaFig.prosa.comPontoFinal, []);
+eq('titulo da ficha em minuscula', fichaFig.tituloDaFicha, 'como funciona');
+/* as figuras sao copia da interface: la o nome, o cargo e a tag sao caixa alta */
+eq('figuras acompanham a caixa alta da interface', fichaFig.figurasEmCaixaAlta,
+   [['.fig-santinho-nome', 'uppercase'], ['.fig-santinho-cargo', 'uppercase'],
+    ['.fig-resultado-nome', 'uppercase'], ['.fig-tag', 'uppercase']]);
+eq('as fontes dos dados ficam no fim', fichaFig.ultimaSecao, 'de onde vêm os dados');
+
+/* movimento reduzido: nada anima, e as figuras continuam legíveis paradas */
+await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+await sleep(700);
+eq('com movimento reduzido nada anima',
+   await page.evaluate(() => document.getAnimations().length), 0);
+eq('e o estado parado das figuras e legivel', await page.evaluate(() => ({
+  sigla: getComputedStyle(document.querySelector('.fig-siglas span')).opacity,
+  nomeEscrito: document.querySelector('.fig-digitando i').getBoundingClientRect().width > 30,
+  resultado: getComputedStyle(document.querySelector('.fig-resultado')).opacity,
+  balao: getComputedStyle(document.querySelector('.fig-balao')).opacity,
+  balaoSemEscala: getComputedStyle(document.querySelector('.fig-balao')).transform,
+})), { sigla: '1', nomeEscrito: true, resultado: '1', balao: '1',
+        balaoSemEscala: 'none' });
+await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }]);
+
+/* a ficha aberta não pode gerar scroll na pagina por baixo */
+for (const [w, h] of [[320, 568], [320, 640], [390, 844]]) {
+  await page.setViewport({ width: w, height: h, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+  await sleep(700);
+  const m = await page.evaluate(() => ({
+    aberta: document.getElementById('ajuda-dialog').open,
+    vScroll: document.documentElement.scrollHeight - window.innerHeight,
+    hScroll: document.documentElement.scrollWidth - window.innerWidth,
+    cabe: document.querySelector('.ajuda-dialog').getBoundingClientRect().bottom <= window.innerHeight + 0.5,
+  }));
+  ok('ficha aberta sem scroll na pagina', m.aberta && m.vScroll <= 1 && m.hScroll <= 1,
+     w + 'x' + h + ' (v ' + m.vScroll + ', h ' + m.hScroll + ')');
+  ok('ficha dentro da tela', m.cabe, w + 'x' + h);
+}
+await silenciarAjuda();
+await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+
+console.log('\n== affordancia de edicao no card');
+await page.goto(URL_RECEBIDA, { waitUntil: 'networkidle0' });
+await sleep(200);
+eq('o card diz que e clicavel pelo cursor',
+   await page.evaluate(() => getComputedStyle(document.querySelector('.card')).cursor), 'pointer');
+ok('o card tem retorno de toque', await page.evaluate(() => {
+  /* :active não é inspecionável direto: procura a regra na folha de estilo */
+  for (const folha of document.styleSheets) {
+    for (const r of folha.cssRules) {
+      const texto = r.cssText || '';
+      if (texto.includes('.card:active') && texto.includes('scale')) return true;
+      if (r.cssRules) for (const inner of r.cssRules) {
+        const t = inner.cssText || '';
+        if (t.includes('.card:active') && t.includes('scale')) return true;
+      }
+    }
+  }
+  return false;
+}));
+
+console.log('\n== texto do compartilhamento');
+await page.goto(BASE + '?uf=sp&df=1313&s1=131&p=13', { waitUntil: 'networkidle0' });
+await sleep(200);
+const cola = await page.evaluate(() => ({
+  comLink: textoParaCompartilhar('https://santinho.art/?x=1'),
+  soCola: textoDaCola(),
+}));
+/* o link vai dentro do texto: passando `text` e `url` separados, o app de
+   destino gruda os dois e come a linha em branco */
+eq('cola, linha em branco, chamada e link',
+   cola.comLink.split('\n'),
+   ['Minha cola eleitoral 2026 - SP', '', 'Dep. federal · 1313', '1º senador · 131',
+    'Presidente · 13', '', 'vem conhecer meus candidatos e fazer a sua também:',
+    'https://santinho.art/?x=1']);
+ok('termina no link', cola.comLink.endsWith('https://santinho.art/?x=1'));
+ok('uma linha em branco, nao duas', !cola.comLink.includes('\n\n\n'));
+ok('a chamada vem imediatamente antes do link, sem linha em branco',
+   cola.comLink.includes('fazer a sua também:\nhttps://'));
+await page.goto(BASE + '?uf=sp', { waitUntil: 'networkidle0' });
+await sleep(200);
+/* sem dígito nenhum não há candidato para conhecer: nem cola, nem chamada */
+eq('sem cola, o texto e apenas o link',
+   await page.evaluate(() => textoParaCompartilhar('https://santinho.art/')),
+   'https://santinho.art/');
+
 console.log('\n== favicon');
 const fav = await page.evaluate(async () => {
   const el = document.querySelector('link[rel=icon]');

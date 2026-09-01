@@ -1768,6 +1768,30 @@ suíte carrega o ícone e confere essas margens.
 
 O `og.png` seguiu o caminho da neutralidade: cinza, com `00` nos exemplos.
 
+### A faixa cromática passava por cima do nome
+
+A faixa diagonal do card é `position: absolute` e não tem `z-index`; o `.ident`
+não é posicionado. Pela ordem de pintura do CSS, isso põe a faixa **acima** do
+nome, e a ponta da diagonal cobria as primeiras letras.
+
+Medido, a invasão na primeira linha do nome ia de 3px a **8,2px**, e piorava
+quanto mais baixa a tela — porque o bloco de identidade é centrado na vertical, e
+quanto menor o card mais a primeira linha sobe para dentro da parte larga da
+diagonal.
+
+O conserto não é um ajuste por breakpoint, é geometria: o texto do `.ident` passa
+a começar depois do **ponto mais largo** da faixa.
+
+```css
+.ident { padding-left: max(0px, calc(var(--band-tail) - var(--card-gap))); }
+```
+
+Assim não existe altura de tela em que a faixa alcance o nome, e nas telas largas
+— onde `--card-gap` já cobre a cauda — o `max()` zera o recuo e nada muda. A
+suíte recalcula a borda da diagonal (`polygon(0 0, 100% 0, 58% 100%, 0 100%)`, ou
+seja de 100% no topo a 58% na base) na altura da primeira linha do nome e exige
+invasão ≤ 0 em cada viewport do §50.
+
 ## 59.7. Fotos — locais, todas as 19.830
 
 O plano inicial era referenciar a foto oficial por URL em runtime, sem peso no
@@ -2391,6 +2415,7 @@ Dep. estadual · 50
 Governador · 13
 Presidente · 13
 
+vem conhecer meus candidatos e fazer a sua também:
 https://santinho.art/?uf=sp&df=1000&de=50&s1=111&s2=999&g=13&p=13
 ```
 
@@ -2401,10 +2426,19 @@ vão na imagem, que segue junto no compartilhamento; repetir em texto era
 redundante. O cargo ficou em caixa normal, com uma linha em branco entre os
 votos, e o título traz só a sigla da UF.
 
-Linha em branco em dois lugares apenas: entre o título e os votos, e antes do
-link. Com só cargo e número por linha, branco entre cada voto deixava a cola
-longa sem ganhar clareza. O link entra no texto apenas no caminho do clipboard —
-no `navigator.share` ele vai no campo `url`.
+Linha em branco em dois lugares apenas: entre o título e os votos, e antes da
+chamada. Com só cargo e número por linha, branco entre cada voto deixava a cola
+longa sem ganhar clareza. A chamada fica **colada no link**, porque as duas
+linhas são uma coisa só.
+
+**O link vai dentro do `text`, não no campo `url` do `navigator.share`.** Com os
+dois campos preenchidos, quem decide como juntá-los é o app de destino — e quase
+todos grudam o link com um espaço ou uma quebra só, comendo a linha em branco
+que separa a cola. Montando o texto inteiro em `textoParaCompartilhar()`, o
+resultado é igual em todo destino, e é exatamente o mesmo texto que vai para a
+área de transferência quando não há compartilhamento nativo (a suíte compara os
+dois). Sem nenhum dígito preenchido não há candidato para conhecer: cai para só
+o link, sem cola e sem chamada.
 
 Cargo vazio não entra. Legenda e número inexistente são ditos com palavras, em
 vez de sumirem. Não há alinhamento por espaços: a fonte de aplicativo de mensagem
@@ -2709,6 +2743,249 @@ um `aria-label` como *"Instagram de MAYA EXEMPLO (abre em nova aba)"*.
 (§26). Sem `stopPropagation()` nos dois, tocar no ícone também moveria o foco do
 número. Tem asserção para isso.
 
+## 59.13-B. Fazer a cola recebida parecer editável
+
+Quem recebe um link abre uma tela que parece **pronta**: seis santinhos com foto,
+nome, partido e número preenchidos. O §55 define o alvo em uma frase - *"isso
+parece uma coleção de santinhos eleitorais, mas editável"* - e o produto
+entregava a primeira metade.
+
+O que existia de sinalização era só a "casinha" permanente de cada dígito
+(justamente por isso o §30 foi implementado e desfeito, ver 59.5). Faltava algo
+que **agisse**: nenhum caret, nenhum `cursor: pointer`, nenhum `:active` no card,
+nenhum texto.
+
+### Duas escolhas no lugar de uma instrução
+
+Na linha que o subtítulo desocupou, quem chega por um link recebido encontra o
+par:
+
+```text
+[ deixar assim ]  [ limpar tudo e fazer a minha → ]
+```
+
+É ação, não instrução: quem lê entende, e quem só toca já decidiu. A primeira
+versão tinha só o botão destrutivo, o que forçava uma escolha ruim - ou apagar a
+cola de alguém, ou não fazer nada. `deixar assim` é a saída conservadora
+(fica mais discreta, só com contorno) e não mexe em número nenhum: apenas assume
+a cola como sua.
+
+**Tocar em qualquer um dos dois significa "agora a cola é minha"**, e os dois
+mexem na mesma flag `state.chegouComCola` - a mesma que decide se a seção *essa
+colinha é de oooutra pessoa!* aparece na ficha de ajuda. Uma decisão, um estado.
+
+O par aparece **só** quando a URL trouxe uma cola e nada foi decidido ainda
+(flag gravada em `hydrateFromUrl()`, apagada em `depoisDeEditar()`, no
+`deixarAssim()` e no `limparTudo()`). Em visita limpa não existe e não custa
+altura de cabeçalho. Medido: 20-21px de altura, uma linha só, zero overflow, de
+320px a 430px.
+
+### O ponteiro que chama o toque
+
+Um ponteiro percorre os dois botões e, em cada parada, o **anel de toque pulsa
+ali uma vez** - o mesmo anel das figuras da ficha de ajuda. É o "clica aqui... ou
+aqui" dito sem texto. O anel é filho do ponteiro, então viaja junto e nasce
+sempre centrado nele; o ponteiro em si nunca desaparece.
+
+Duas animações, cada uma no seu elemento: `refazer-anda` move o `left` do
+ponteiro, `refazer-anel` faz o anel crescer e apagar. Os pulsos caem dentro das
+janelas em que o ponteiro está parado (0-26% e 40-74% do ciclo de 4,4s), e
+durante as viagens o anel fica invisível.
+
+A cadência é calculada para ser **a mesma** do resto: no `fig-toque` das outras
+figuras o crescimento leva ~1s (de 15% a 65% de um ciclo de 2s), e aqui os 22% de
+um ciclo de 4,4s dão 0,97s. Mesma escala (`.8` a `1.6`) e mesmo `ease-out`. A
+primeira versão dava dois pulsos rápidos por parada, o que soava afobado ao lado
+dos outros anéis.
+
+A primeira versão fazia o **ponteiro** piscar por opacidade, o que era outra
+coisa: parecia falha de renderização, não convite. E ao trocar a animação sobrou
+um `opacity: 0` no ponteiro, que a versão anterior reacendia por keyframe - com o
+keyframe fora, ele ficou invisível. A medição pegou (`cursor: 0`), o olho não
+teria pegado tão rápido.
+
+As posições são percentagens fixas no CSS, e por isso foram **medidas** antes de
+escolhidas: o centro de `deixar assim` fica entre 22% e 25% da largura do par em
+toda tela de 320 a 430px, e o de `limpar tudo` entre 63% e 64%. Com 21% e 61% (o
+`left` do ponteiro, mais 2,5% de meia largura dele) o gesto acerta os dois botões
+em qualquer largura.
+
+A suíte confere isso do jeito certo: congela a animação nos instantes de pulso e
+de viagem, em quatro larguras, e exige que o meio do ponteiro esteja **dentro** da
+caixa do botão esperado, que o anel esteja aceso no pulso e apagado na viagem,
+que ele esteja centrado no ponteiro, e que o ponteiro nunca fique transparente.
+Gesto que aponta para o vazio não serve de gesto.
+
+### Limpar tudo é destrutivo, então empilha histórico
+
+O clique em `limpar tudo` zera os seis cargos e chama
+`focusDigit(CARGOS[0].key, 0)`. Isso acontece **dentro do gesto do usuário**,
+então o `<input>` foca de verdade: o dígito ganha caret e o teclado virtual abre.
+É o sinal mais direto de "digite aqui", e só é legítimo porque houve toque - o
+mesmo `focus()` no boot seria bloqueado pelo navegador e, se passasse, seria
+invasivo.
+
+Como apagar a cola de outra pessoa não tem desfazer na tela, é a única ação que
+empilha histórico:
+
+```js
+syncUrl({ empilhar: true });     // pushState, não replaceState
+```
+
+Só isso não bastava: sem tratar `popstate`, o voltar do navegador mudaria a barra
+de endereço e deixaria a tela intacta. Entrou `ligarHistorico()`, que re-hidrata
+da URL - e cobre de graça o voltar para qualquer entrada anterior, inclusive de
+outra UF. A suíte verifica o ciclo inteiro: limpar, voltar, e a cola recebida de
+volta com os seis números.
+
+### A terceira aba, só com o ícone "i"
+
+O rodapé é `display: flex` **sem `flex-wrap`**, com larguras baseadas em conteúdo
+e rótulos em `white-space: nowrap`: uma terceira aba **com rótulo** não quebraria
+linha, estouraria na horizontal em 320px. Sem rótulo ela ocupa 31px, contra os
+~90px de folga que o rodapé tinha. Sem rótulo visível o WCAG 2.5.3 não se aplica,
+e o nome acessível vem do `aria-label`.
+
+Detalhe que quase passou: o padding direito das outras abas mora no
+`.rotulo-botao`, não no botão. Sem rótulo, a aba precisou de padding simétrico
+próprio - antes disso ela tinha 19px de largura e o ícone encostava na borda.
+
+Ela é a **primeira** das três, e a ordem tem de bater no HTML e no array `ABAS`:
+a fileira dentro da folha é feita de clones, e o alinhamento em x entre ela e o
+rodapé é emergente (mesmo gap, mesmo `justify-content`, mesmos elementos).
+
+### O registro de abas, que a terceira exigiu
+
+Havia **três lugares codificados para exatamente duas abas**: a lista de
+`montarAbas`, a lista de `trocarDeFolha` e um ternário binário. Mais os blocos de
+`close`, clique-fora e `cancel` duplicados nos dois diálogos. Acrescentar a
+terceira triplicaria a duplicação, então primeiro entrou um array `ABAS` (nome,
+trigger, diálogo, abrir, fechar) e uma `ligarFolha(nome)` com a fiação comum. As
+funções entram por referência porque declaração de função é *hoisted*.
+
+Resultado: as 644 asserções que já existiam passaram sem alteração.
+
+### A ficha abre sozinha na primeira visita
+
+Depois de os dados chegarem, para os cards já estarem pintados atrás dela. Ela
+sobe do rodapé e ocupa 80dvh, então cabeçalho e primeiro card continuam à vista -
+bem menos invasiva que um modal centrado, e fecha tocando fora.
+
+O foco vai no **corpo rolável** (`tabindex="-1"`), não num campo nem num botão:
+num campo viria o teclado virtual junto, e num botão o anel de `:focus-visible`
+aparecia sozinho na abertura. Focando um contêiner por script, não aparece - e o
+Tab continua levando ao ✕, com anel, para quem navega por teclado.
+
+O checkbox "não mostrar de novo" nasce desmarcado e grava na hora. É a **primeira
+vez que o projeto usa `localStorage`**: um booleano de preferência de interface,
+nunca voto (§37), com `try/catch` na leitura e na escrita, porque janela privada
+lança. Sem storage a ficha simplesmente volta a abrir. Há teste para isso, numa
+aba própria - instalar o stub que bloqueia storage na aba principal o deixava
+ligado para o resto da suíte, e foi o que aconteceu na primeira tentativa.
+
+A boas-vindas é sempre a primeira seção. A seção *essa colinha é de oooutra
+pessoa!* entra logo depois dela, e só para quem chegou por um link com números na
+URL.
+
+### Dez seções, cada uma com sua figura em CSS
+
+A ficha conta a história na ordem em que a pessoa precisa: boas-vindas → (se veio
+por link) *essa colinha é de oooutra pessoa!* → estado → números → voto de
+legenda → número inválido → busca por nome → compartilhar → privacidade →
+fontes. As fontes ficam por último de propósito: são referência, não instrução.
+**Toda** seção tem ilustração animada em HTML/CSS - nenhuma imagem para
+carregar, e elas acompanham o tema:
+
+| Seção | Figura |
+|---|---|
+| boas-vindas | mini santinho, com foto, nome, cargo e número |
+| cola de outra pessoa | as duas escolhas, com o ponteiro em vaivém entre elas |
+| o seu estado | placa trocando bandeira e sigla (SP↔MG, bandeiras reais) no ritmo do toque na aba |
+| os números | casinhas com um dígito selecionado, ponteiro no canto e anel pulsando |
+| voto de legenda | só os dois dígitos do partido, com a tag `VOTO DE LEGENDA` |
+| número inválido | quatro dígitos e a tag `INVÁLIDO` |
+| busca por nome | o nome se escrevendo no campo e o resultado aparecendo com o número |
+| compartilhar | toque no botão e o balão de mensagem saindo do avatar de quem mandou |
+| privacidade | o aparelho com a URL, um ponto tentando sair e a barreira |
+| fontes | corrente TSE → arquivos estáticos → seu navegador, com um pulso atravessando |
+
+Regras que valem para todas: figura **centrada**, com a legenda centrada abaixo;
+cinza no lugar de cor de partido (ilustração não pode carregar identidade de
+legenda, §46); `aria-hidden` no desenho e o sentido na `figcaption`; e **estado
+parado legível** - com `prefers-reduced-motion: reduce` nada anima e todas as
+figuras aparecem no seu quadro final, o que a suíte verifica medindo opacidade e
+largura.
+
+O balão do compartilhamento é o único ponto com matiz fora das cores de partido:
+verde bem dessaturado, rabinho no canto de baixo à direita, hora e os dois tiques
+azuis. É a gramática de app de conversa, o suficiente para o desenho ser lido
+como "mensagem" sem virar propaganda de aplicativo.
+
+### Nenhum exemplo pode ser candidato de verdade
+
+Exemplo com número ou nome real dá aparência de viés (§46), então todos os
+exemplos da ficha usam a **família 99**, escolhida por eliminação: dos 90 números
+de dois dígitos, 30 são partido, e 99 não é nenhum deles. Conferido contra a base
+real - `df 9987`, `df 9912`, `de 99876`, `s 987`, `g 99` e o nome
+`ALECRIM DOURADO` não existem em candidatura alguma.
+
+A suíte varre os números que aparecem nas figuras, tenta resolver cada um na base
+carregada e exige zero colisões, mais a checagem de que o prefixo não é número de
+partido. Assim o dia em que alguém trocar um exemplo por um número "bonitinho" a
+suíte reclama.
+
+Dois erros que a medição pegou: o anel de toque era menor que a casinha e ficava
+**escondido dentro dela**, escuro sobre escuro; e a miniatura de stories esticava
+até a altura do balão por causa de `align-items: stretch`, perdendo justamente a
+proporção 9:16 que ela ilustra.
+
+### A voz da ficha: minúscula e sem ponto final
+
+Faltava padrão - as seções apareciam em MAIÚSCULAS por `text-transform`, as
+aberturas em minúsculas, e os termos da lista de fontes capitalizados. A regra
+agora separa **duas coisas que pareciam uma**:
+
+**O texto explicativo fala em minúscula, do começo ao fim.** Título da ficha,
+títulos de seção, termos, parágrafos, legendas e definições - tudo minúsculo,
+inclusive depois de ponto, e **sem ponto final** (`?` e `!` continuam valendo).
+É uma voz de conversa, não de manual. Sigla e acrônimo mantêm a caixa (TSE, SP,
+MG, P465), e nome próprio também (Wikidata, Wikimedia Commons).
+
+**As figuras copiam a caixa da interface.** No card de verdade `.name` e
+`.office` são `text-transform: uppercase`, e a tag herda isso - então na figura
+o nome sai `ALECRIM DOURADO`, o cargo `DEP. FEDERAL` e as tags `VOTO DE LEGENDA`
+e `INVÁLIDO`. Uma ilustração que não parece com a tela não serve de ilustração.
+O truque é fazer isso por CSS: a fonte no HTML segue minúscula como o resto da
+ficha, e só a renderização grita.
+
+O balão do compartilhamento é a outra exceção, pelo mesmo motivo: ele cita a
+mensagem que o produto realmente envia, então mantém o `Minha cola eleitoral
+2026 - SP` como sai de verdade.
+
+A hierarquia dos títulos passou a vir de peso e tamanho, não de caixa alta.
+
+A suíte trava as quatro metades da regra varrendo **só os elementos de prosa**
+(`h3`, `dt`, `p`, `dd`, `figcaption`), o que exclui os desenhos de propósito:
+nenhuma frase começa com maiúscula, nenhuma começa com maiúscula depois de
+ponto, nada em caixa alta fora da lista de exceções, e nada termina em ponto.
+Do outro lado, uma asserção positiva exige que as quatro classes das figuras
+continuem em `uppercase` - se alguém "padronizar" as figuras junto com o texto,
+a suíte reclama.
+
+Um detalhe de processo que vale registrar: a transformação para minúscula foi
+feita por script, e ele **comeu o balão**. O script trocava o balão por um
+marcador `@@BALAO@@` para protegê-lo, e então minusculava tudo - inclusive o
+marcador, que virou `@@bALAO@@` e nunca casou na volta. O balão sumiu e ficou o
+marcador na tela. Proteger um trecho com um marcador que a própria transformação
+altera não protege nada.
+
+### Duas affordâncias que faltavam no card
+
+Achados de graça na exploração: o card **não tinha `cursor: pointer`** (no
+desktop o ponteiro não dizia que ali se clica) e **não tinha `:active`** - todos
+os botões têm `scale(.96)` e o card não dava retorno nenhum ao toque. Ganhou
+`scale(.994)`, bem mais discreto: o card é grande, e 4% ali seria um salto.
+
 ## 59.14. Publicação no GitHub Pages
 
 Nada de build: *Settings → Pages → Deploy from a branch → `main` / root*.
@@ -2729,7 +3006,7 @@ Duas suítes, as duas no `npm test`:
   usuário canônico, plataforma vs. site próprio, TLD real, caminho vazio, dedupe
   e corte em cinco. Os casos do Lula, do Patrus e do Helton
   estão lá como regressão, com o nome deles no rótulo.
-- `tests/interacao.mjs` — **614 asserções passando**, cobrindo os §48/§50 e mais.
+- `tests/interacao.mjs` — **732 asserções passando**, cobrindo os §48/§50 e mais.
   A suíte sobe o servidor estático, acha o Chrome e dirige um navegador de
   verdade. Ela serve `tests/fixtures/data` (base fictícia fixa), **não** `data/`:
   atualizar a base real do TSE não pode quebrar teste.

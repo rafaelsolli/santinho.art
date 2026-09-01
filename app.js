@@ -93,6 +93,9 @@ const state = {
   /* ordem em que cada cargo foi mexido — contador monotônico, não relógio:
    * determinístico e suficiente para saber qual vaga é a mais antiga (§21) */
   mexidoEm: {},
+  /* a URL trouxe uma cola e nada foi editado ainda: é o caso do link recebido,
+   * em que a tela parece pronta e não editável */
+  chegouComCola: false,
 };
 let relogioDeEdicao = 0;
 const marcarMexido = key => { state.mexidoEm[key] = ++relogioDeEdicao; };
@@ -126,6 +129,16 @@ const els = {
   ufContagem: document.getElementById('uf-contagem'),
   buscaFiltros: document.getElementById('busca-filtros'),
   buscaFiltrosPartidos: document.getElementById('busca-filtros-partidos'),
+  ajudaTrigger: document.getElementById('ajuda-trigger'),
+  ajudaDialog:  document.getElementById('ajuda-dialog'),
+  ajudaClose:   document.getElementById('ajuda-close'),
+  ajudaCorpo:   document.getElementById('ajuda-corpo'),
+  ajudaRecebida: document.getElementById('ajuda-recebida'),
+  ajudaNaoMostrar: document.getElementById('ajuda-nao-mostrar'),
+  ajudaBaseData: document.getElementById('ajuda-base-data'),
+  refazerPar: document.getElementById('refazer-par'),
+  refazer:   document.getElementById('refazer'),
+  deixarAssim: document.getElementById('deixar-assim'),
   share:     document.getElementById('share'),
   status:    document.getElementById('status'),
   toast:     document.getElementById('toast'),
@@ -581,12 +594,27 @@ function filtrarEstados() {
  * não um controle (fechar já existe no ✕, no Esc e no clique fora). A outra aba
  * troca de folha. */
 
+/* Registro único das abas. Antes eram três lugares codificados para exatamente
+ * duas (a lista de montarAbas, a lista de trocarDeFolha e um ternário), e a
+ * terceira aba triplicaria a duplicação. As funções de abrir/fechar entram por
+ * referência: declaração de função é hoisted, então já existem aqui. */
+/* A ordem aqui tem de ser a MESMA do rodapé no HTML: a fileira da folha é feita
+ * de clones e o alinhamento em x entre as duas é emergente (mesmo gap, mesmo
+ * justify-content, mesmos elementos). Divergir desalinha as abas. */
+const ABAS = [
+  { nome: 'ajuda', trigger: 'ajudaTrigger', dialogo: 'ajudaDialog', abrir: abrirAjuda,     fechar: fecharAjuda },
+  { nome: 'uf',    trigger: 'ufTrigger',    dialogo: 'ufDialog',    abrir: abrirSeletorUf, fechar: fecharSeletorUf },
+  { nome: 'busca', trigger: 'buscaTrigger', dialogo: 'buscaDialog', abrir: abrirBusca,     fechar: fecharBusca },
+];
+
+const aba = nome => ABAS.find(a => a.nome === nome);
+
 function montarAbas(ativa) {
   const linha = document.createElement('div');
   linha.className = 'folha-abas';
 
-  for (const [nome, original] of [['uf', els.ufTrigger], ['busca', els.buscaTrigger]]) {
-    const clone = original.cloneNode(true);
+  for (const { nome, trigger } of ABAS) {
+    const clone = els[trigger].cloneNode(true);
     clone.removeAttribute('id');
     for (const filho of clone.querySelectorAll('[id]')) filho.removeAttribute('id');
 
@@ -641,16 +669,37 @@ function fecharComAnimacao(dialogo) {
 /* Trocar de folha não é fechar e abrir: a ficha fica, o conteúdo muda. Sem
  * animação, senão a folha desceria e voltaria. */
 function trocarDeFolha(destino) {
-  for (const d of [els.ufDialog, els.buscaDialog]) {
+  for (const { dialogo } of ABAS) {
+    const d = els[dialogo];
     d.classList.remove('is-fechando');
     if (d.open) d.close();
   }
   /* a classe sai no evento `close`, não no próximo quadro: requestAnimationFrame
    * roda antes de a animação começar, e a folha subia de novo */
-  const alvo = destino === 'uf' ? els.ufDialog : els.buscaDialog;
-  alvo.classList.add('sem-animacao');
-  if (destino === 'uf') abrirSeletorUf();
-  else abrirBusca();
+  const alvo = aba(destino);
+  els[alvo.dialogo].classList.add('sem-animacao');
+  alvo.abrir();
+}
+
+/* Fiação comum das três folhas: limpar a fileira de abas ao fechar, fechar no
+ * clique fora (backdrop ou faixa das abas, onde o alvo é o próprio <dialog> ou a
+ * fileira, nunca o corpo) e no Esc. O que é específico fica no ligar*() de cada
+ * uma. */
+function ligarFolha(nome) {
+  const { dialogo, trigger, fechar } = aba(nome);
+  const d = els[dialogo];
+
+  d.addEventListener('close', () => {
+    const abas = d.querySelector('.folha-abas');
+    if (abas) abas.remove();          // não deixa fileira órfã na folha fechada
+    d.classList.remove('sem-animacao');
+    els[trigger].setAttribute('aria-expanded', 'false');
+    els[trigger].focus({ preventScroll: true });
+  });
+  d.addEventListener('click', e => {
+    if (e.target === d || e.target.classList.contains('folha-abas')) fechar();
+  });
+  d.addEventListener('cancel', e => { e.preventDefault(); fechar(); });
 }
 
 function abrirSeletorUf() {
@@ -708,23 +757,13 @@ function tecladoNoSeletorUf(e) {
 }
 
 function ligarSeletorUf() {
+  ligarFolha('uf');
   els.ufTrigger.addEventListener('click', abrirSeletorUf);
   els.ufPlaca.addEventListener('click', abrirSeletorUf);
   els.ufClose.addEventListener('click', fecharSeletorUf);
+  /* a placa do cabeçalho é um segundo gatilho para esta folha: só dela */
   els.ufDialog.addEventListener('close', () => {
     els.ufPlaca.setAttribute('aria-expanded', 'false');
-    const abas = els.ufDialog.querySelector('.folha-abas');
-    if (abas) abas.remove();          // não deixa fileira órfã na folha fechada
-    els.ufDialog.classList.remove('sem-animacao');
-    els.ufTrigger.setAttribute('aria-expanded', 'false');
-    els.ufTrigger.focus({ preventScroll: true });
-  });
-  /* clique fora do conteúdo fecha: no backdrop e na faixa das abas o alvo é o
-   * próprio <dialog> ou a fileira, nunca o corpo */
-  els.ufDialog.addEventListener('click', e => {
-    if (e.target === els.ufDialog || e.target.classList.contains('folha-abas')) {
-      fecharSeletorUf();
-    }
   });
   els.ufBusca.addEventListener('input', filtrarEstados);
   els.ufFiltros.addEventListener('click', e => {
@@ -756,7 +795,6 @@ function ligarSeletorUf() {
     if (opcao.dataset.uf !== state.uf) trocarUf(opcao.dataset.uf);
   });
   els.ufDialog.addEventListener('keydown', tecladoNoSeletorUf);
-  els.ufDialog.addEventListener('cancel', e => { e.preventDefault(); fecharSeletorUf(); });
 }
 
 function montarCards() {
@@ -1001,6 +1039,9 @@ function ligarEventos(cargo) {
 
 function depoisDeEditar(cargo) {
   marcarMexido(cargo.key);
+  /* a partir da primeira edição a cola já é da pessoa: o convite para refazer
+     perde o sentido e devolve a altura ao cabeçalho */
+  state.chegouComCola = false;
   renderAll();
   syncSink(cargo);
   syncUrl();
@@ -1014,21 +1055,25 @@ function codificarVoto(digits) {
 }
 
 /* replaceState: a URL acompanha a digitação sem recarregar nem empilhar
- * histórico a cada dígito (§4.1) */
-function syncUrl() {
+ * histórico a cada dígito (§4.1). `empilhar` é a exceção de "limpar tudo", que
+ * precisa de uma entrada de histórico para o voltar do navegador desfazer. */
+function syncUrl({ empilhar = false } = {}) {
   const p = new URLSearchParams();
   p.set('uf', state.uf.toLowerCase());
   for (const cargo of CARGOS) {
     const v = codificarVoto(state.votes[cargo.key]);
     if (v) p.set(cargo.key, v);
   }
-  history.replaceState(null, '', location.pathname + '?' + p.toString() + location.hash);
+  const alvo = location.pathname + '?' + p.toString() + location.hash;
+  if (empilhar) history.pushState(null, '', alvo);
+  else history.replaceState(null, '', alvo);
 }
 
 function hydrateFromUrl() {
   const p = new URLSearchParams(location.search);
   const uf = (p.get('uf') || '').trim().toUpperCase();
   state.uf = NOME_DA_UF.has(uf) ? uf : UF_PADRAO;
+  state.chegouComCola = false;
 
   for (const cargo of CARGOS) {
     const bruto = (p.get(cargo.key) || '').replace(/[^0-9-]/g, '').slice(0, cargo.len);
@@ -1037,7 +1082,10 @@ function hydrateFromUrl() {
     state.votes[cargo.key] = arr;
     /* na ordem dos cargos: o que vem antes na URL conta como mexido há mais
      * tempo, então a substituição por busca começa pela primeira vaga */
-    if (arr.some(d => d !== null)) marcarMexido(cargo.key);
+    if (arr.some(d => d !== null)) {
+      marcarMexido(cargo.key);
+      state.chegouComCola = true;
+    }
   }
 }
 
@@ -1382,6 +1430,72 @@ function fecharBusca() {
   fecharComAnimacao(els.buscaDialog);
 }
 
+/* ------------------------------------------------------ ficha de ajuda */
+
+/* A única coisa que o site guarda no navegador: um booleano de preferência de
+ * interface. Nunca o voto - as escolhas ficam na URL e no estado da página
+ * (§37). Janela privada lança nos dois lados, então tudo em try/catch: sem
+ * storage, a ficha volta a abrir, e é só isso que se perde. */
+const CHAVE_AJUDA = 'santinho:ajuda-oculta';
+
+function ajudaEstaOculta() {
+  try { return localStorage.getItem(CHAVE_AJUDA) === '1'; } catch (_) { return false; }
+}
+
+function guardarAjudaOculta(oculta) {
+  try {
+    if (oculta) localStorage.setItem(CHAVE_AJUDA, '1');
+    else localStorage.removeItem(CHAVE_AJUDA);
+  } catch (_) { /* sem storage: a ficha volta a abrir na próxima visita */ }
+}
+
+function abrirAjuda() {
+  /* a boas-vindas é sempre visível; a seção "essa colinha é de oooutra pessoa"
+     entra só para quem chegou por um link com números na URL, e vem antes de
+     qualquer explicação de mecânica */
+  els.ajudaRecebida.hidden = !state.chegouComCola;
+  els.ajudaNaoMostrar.checked = ajudaEstaOculta();
+  /* data de geração da base, quando o meta.json já chegou: dizer "os dados são
+     do TSE" sem dizer de quando é meia informação */
+  els.ajudaBaseData.textContent = meta && meta.geradoPeloTseEm
+    ? 'base gerada pelo TSE em ' + meta.geradoPeloTseEm : '';
+
+  prepararAbas(els.ajudaDialog, 'ajuda');
+  els.ajudaTrigger.setAttribute('aria-expanded', 'true');
+  els.ajudaDialog.showModal();
+  els.ajudaCorpo.scrollTop = 0;
+  /* Foco no corpo rolável (tabindex="-1"), não num campo nem num botão: esta
+     ficha pode abrir sem gesto do usuário, e um input traria o teclado virtual
+     junto. Num botão, o anel de :focus-visible aparecia sozinho na abertura;
+     num contêiner focado por script, não - e o Tab continua indo para o ✕, com
+     anel, para quem navega por teclado. De brinde, as setas rolam o texto. */
+  els.ajudaCorpo.focus({ preventScroll: true });
+}
+
+function fecharAjuda() {
+  fecharComAnimacao(els.ajudaDialog);
+}
+
+/* Primeira visita: a ficha abre sozinha, depois de os dados chegarem, para os
+ * cards já estarem pintados atrás dela. Ela sobe do rodapé e ocupa 80dvh, então
+ * cabeçalho e primeiro card continuam à vista - bem menos invasiva que um modal
+ * centrado, e fecha tocando fora. */
+function talvezAbrirAjuda() {
+  if (ajudaEstaOculta()) return;
+  /* não atropela quem já abriu outra folha enquanto os dados carregavam */
+  if (ABAS.some(a => els[a.dialogo].open)) return;
+  abrirAjuda();
+}
+
+function ligarAjuda() {
+  ligarFolha('ajuda');
+  els.ajudaTrigger.addEventListener('click', abrirAjuda);
+  els.ajudaClose.addEventListener('click', fecharAjuda);
+  els.ajudaNaoMostrar.addEventListener('change', e => {
+    guardarAjudaOculta(e.target.checked);
+  });
+}
+
 function escolherResultado(botao) {
   const item = { base: botao.dataset.base };
   fecharBusca();
@@ -1393,15 +1507,9 @@ function opcoesBusca() {
 }
 
 function ligarBusca() {
+  ligarFolha('busca');
   els.buscaTrigger.addEventListener('click', abrirBusca);
   els.buscaClose.addEventListener('click', fecharBusca);
-  els.buscaDialog.addEventListener('close', () => {
-    const abas = els.buscaDialog.querySelector('.folha-abas');
-    if (abas) abas.remove();          // não deixa fileira órfã na folha fechada
-    els.buscaDialog.classList.remove('sem-animacao');
-    els.buscaTrigger.setAttribute('aria-expanded', 'false');
-    els.buscaTrigger.focus({ preventScroll: true });
-  });
   els.buscaInput.addEventListener('input', renderBusca);
   els.buscaFiltros.addEventListener('click', e => {
     if (e.target.closest('[data-limpar-filtros]')) {
@@ -1452,13 +1560,6 @@ function ligarBusca() {
     renderBusca();
   });
 
-  /* clique fora do conteúdo fecha: no backdrop, o alvo é o próprio <dialog> */
-  els.buscaDialog.addEventListener('click', e => {
-    if (e.target === els.buscaDialog || e.target.classList.contains('folha-abas')) {
-      fecharBusca();
-    }
-  });
-
   els.buscaLista.addEventListener('click', e => {
     const opcao = e.target.closest('.busca-opcao');
     if (opcao) escolherResultado(opcao);
@@ -1477,8 +1578,6 @@ function ligarBusca() {
       opcoes[0].focus();
     }
   });
-
-  els.buscaDialog.addEventListener('cancel', e => { e.preventDefault(); fecharBusca(); });
 
   els.buscaLista.addEventListener('keydown', e => {
     const opcoes = opcoesBusca();
@@ -1617,7 +1716,40 @@ function renderRedes(cargo, r) {
   }
 }
 
-function renderAll() { for (const cargo of CARGOS) renderCard(cargo); }
+/* O par de escolhas só existe enquanto faz sentido: chegou cola pela URL e nada
+ * foi decidido ainda. Em visita limpa não aparece e não custa altura. */
+function renderRefazer() {
+  els.refazerPar.hidden = !state.chegouComCola;
+}
+
+/* "deixar assim": não mexe em número nenhum, só assume a cola como sua. É a
+ * saída não destrutiva, e some pelo mesmo caminho da outra - a flag é a mesma
+ * que decide a seção "essa colinha é de oooutra pessoa!" na ficha de ajuda. */
+function deixarAssim() {
+  state.chegouComCola = false;
+  renderRefazer();
+}
+
+/* Limpar a cola de outra pessoa é destrutivo e não tem desfazer na tela, então
+ * esta é a única ação que empilha histórico: o voltar do navegador devolve o que
+ * a pessoa recebeu (há um listener de `popstate` que re-hidrata). */
+function limparTudo() {
+  for (const cargo of CARGOS) state.votes[cargo.key] = new Array(cargo.len).fill(null);
+  state.mexidoEm = {};
+  relogioDeEdicao = 0;
+  state.chegouComCola = false;
+  syncUrl({ empilhar: true });
+  /* estamos dentro de um gesto do usuário, então o <input> foca de verdade: o
+     dígito ganha caret e o teclado virtual pode abrir. É o sinal mais direto de
+     "digite aqui", e só é legítimo porque houve toque. */
+  focusDigit(CARGOS[0].key, 0);
+  agendarImagem();
+}
+
+function renderAll() {
+  for (const cargo of CARGOS) renderCard(cargo);
+  renderRefazer();
+}
 
 /* --------------------------------------------------------------- status */
 
@@ -1667,6 +1799,20 @@ function textoDaCola() {
   if (!linhas.length) return null;
 
   return 'Minha cola eleitoral 2026 - ' + state.uf + '\n\n' + linhas.join('\n');
+}
+
+/* O link vai DENTRO do texto, e não no campo `url` do navigator.share.
+ *
+ * Passando os dois campos, quem decide como juntá-los é o app de destino - e
+ * quase todos grudam o link com um espaço ou uma quebra só, o que come a linha
+ * em branco que separa a cola do link. Montando aqui, o resultado é o mesmo em
+ * todo destino, e é o mesmo texto que vai para a área de transferência. */
+const CHAMADA = 'vem conhecer meus candidatos e fazer a sua também:';
+
+function textoParaCompartilhar(url) {
+  const cola = textoDaCola();
+  /* sem nenhum dígito não há candidato para conhecer: sobra só o link */
+  return cola ? cola + '\n\n' + CHAMADA + '\n' + url : url;
 }
 
 /* -------------------------------------------------------- imagem do santinho */
@@ -2009,9 +2155,9 @@ function baixarImagem(blob) {
 
 async function compartilhar() {
   const url = location.href;
-  const texto = textoDaCola();
-  const dados = { title: 'santinho.art', url };
-  if (texto) dados.text = texto;
+  const texto = textoParaCompartilhar(url);
+  const temCola = texto !== url;        /* sem nenhum dígito, sobra só o link */
+  const dados = { title: 'santinho.art', text: texto };
 
   const pronta = imagemCache && imagemCache.chave === chaveDoEstado() ? imagemCache.blob : null;
   const arquivo = pronta
@@ -2037,15 +2183,14 @@ async function compartilhar() {
   }
 
   /* sem compartilhamento nativo: copia a cola e entrega a imagem por download */
-  const paraCopiar = (texto ? texto + '\n\n' : '') + url;
   let copiou = false;
   try {
-    await navigator.clipboard.writeText(paraCopiar);
+    await navigator.clipboard.writeText(texto);
     copiou = true;
   } catch (_) { /* sem permissão de clipboard */ }
 
   if (pronta) baixarImagem(pronta);
-  if (copiou) toast(pronta ? 'Cola copiada ✓ · imagem baixada' : (texto ? 'Cola copiada ✓' : 'Link copiado ✓'));
+  if (copiou) toast(pronta ? 'Cola copiada ✓ · imagem baixada' : (temCola ? 'Cola copiada ✓' : 'Link copiado ✓'));
   else toast(pronta ? 'Imagem baixada ✓' : 'Copie o link da barra de endereço');
   if (!pronta) prepararImagem();       // deixa pronta para a próxima
 }
@@ -2083,6 +2228,31 @@ function observarTecladoVirtual() {
   aferir();
 }
 
+/* A URL é a fonte da verdade, mas sem isto o voltar do navegador mudaria a barra
+ * de endereço e deixaria a tela intacta - e a promessa de desfazer o "limpar
+ * tudo" cairia. Re-hidratar cobre também o voltar para qualquer entrada
+ * anterior, inclusive de outra UF. */
+function ligarHistorico() {
+  window.addEventListener('popstate', () => {
+    const ufAntes = state.uf;
+    state.mexidoEm = {};
+    relogioDeEdicao = 0;
+    hydrateFromUrl();
+    state.focus = null;
+    renderGatilhoUf();
+    renderAll();
+    if (state.uf !== ufAntes) {
+      loadElectionData(state.uf).then(() => {
+        cacheDeCor.clear();
+        renderAll();
+        atualizarStatus();
+      });
+      carregarRedes(state.uf);
+    }
+    agendarImagem();
+  });
+}
+
 function init() {
   hydrateFromUrl();
   montarCards();
@@ -2092,8 +2262,12 @@ function init() {
 
   ligarSeletorUf();
   ligarBusca();
+  ligarAjuda();
+  els.refazer.addEventListener('click', limparTudo);
+  els.deixarAssim.addEventListener('click', deixarAssim);
   els.share.addEventListener('click', compartilhar);
   observarTecladoVirtual();
+  ligarHistorico();
 
   const carregamento = Promise.all(
     [carregarMeta(), carregarCores(), loadElectionData('BR'), loadElectionData(state.uf)]);
@@ -2105,6 +2279,7 @@ function init() {
     agendarImagem();
     carregarRedes(state.uf);
     carregarRedes('BR');
+    talvezAbrirAjuda();
   });
 }
 
