@@ -1467,6 +1467,44 @@ ok('conteudo a 200px ou mais da base', 1920 - img.base >= 200, (1920 - img.base)
 ok('margem lateral esquerda de 20px ou mais', img.esq >= 20, img.esq + 'px');
 ok('margem lateral direita de 20px ou mais', 1080 - img.dir >= 20, (1080 - img.dir) + 'px');
 
+/* --------------------------------------------------------------- favicon */
+console.log('\n== favicon');
+const fav = await page.evaluate(async () => {
+  const el = document.querySelector('link[rel=icon]');
+  if (!el) return { existe: false };
+  const href = el.getAttribute('href');
+  const img = new Image();
+  const carregou = await new Promise(r => {
+    img.onload = () => r(true); img.onerror = () => r(false); img.src = href;
+  });
+  if (!carregou) return { existe: true, carregou: false, href };
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0, 64, 64);
+  const px = ctx.getImageData(0, 0, 64, 64).data;
+  let topo = -1, base = -1, esq = 64, dir = -1, tinta = 0;
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    if (px[(y * 64 + x) * 4 + 3] < 20) continue;   // alfa: o fundo é transparente
+    tinta++;
+    if (topo < 0) topo = y;
+    base = y; if (x < esq) esq = x; if (x > dir) dir = x;
+  }
+  return { existe: true, carregou: true, embutido: href.startsWith('data:image/svg+xml,'),
+           bytes: href.length, tinta,
+           margens: { topo, base: 63 - base, esq, dir: 63 - dir } };
+});
+ok('favicon declarado', fav.existe);
+ok('o navegador carrega o icone', fav.carregou);
+ok('embutido, sem requisicao extra', fav.embutido, fav.bytes + ' bytes');
+ok('tem desenho', fav.tinta > 200, fav.tinta + ' pixels');
+/* em 54px o glifo ficava a 3px da borda e as mangas encostavam */
+ok('nao encosta nas bordas (4px ou mais de cada lado)',
+   Object.values(fav.margens).every(v => v >= 4), JSON.stringify(fav.margens));
+ok('centrado na vertical e na horizontal',
+   Math.abs(fav.margens.topo - fav.margens.base) <= 2 &&
+   Math.abs(fav.margens.esq - fav.margens.dir) <= 2, JSON.stringify(fav.margens));
+
 console.log('\n== erros de console/pageerror');
 eq('sem erros de JS', erros, []);
 

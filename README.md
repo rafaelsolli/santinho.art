@@ -1751,9 +1751,22 @@ cor escura e em cor clara, em vez de confiar no olho.
 
 ### Marca
 
-O favicon anterior era um quadrado **vermelho com "13"** — que é número de
-partido real. Virou marca neutra (`00`, número que nenhuma legenda tem). O
-`og.png` seguiu o mesmo caminho: cinza, com `00` nos exemplos.
+O primeiro favicon era um quadrado **vermelho com "13"** — que é número de
+partido real. Virou quadrado cinza com `00` (número que nenhuma legenda tem), e
+hoje é o emoji **🙏**, como SVG embutido de 176 bytes:
+
+```html
+<link rel="icon" href="data:image/svg+xml,…<text x='32' y='47' font-size='46'
+      text-anchor='middle'>🙏</text>…">
+```
+
+Sem arquivo e sem requisição: o desenho vem da fonte de emoji do sistema. O
+`font-size` e o `y` foram ajustados medindo o alfa dos pixels — em `54px` o
+glifo ficava a 3px das bordas e as mangas encostavam; em `46px` sobram 7px em
+cima e embaixo, 10px nas laterais, e ele continua legível nos 16px da aba. A
+suíte carrega o ícone e confere essas margens.
+
+O `og.png` seguiu o caminho da neutralidade: cinza, com `00` nos exemplos.
 
 ## 59.7. Fotos — locais, todas as 19.830
 
