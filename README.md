@@ -2441,6 +2441,253 @@ e depois de 1,6s a imagem volta sozinha.
 | sem nada (desktop) | copia a cola inteira e **baixa** a imagem |
 | usuário cancela | nada; não cai para o clipboard |
 
+## 59.13-A. Redes sociais no card
+
+Os ícones vêm do conjunto `rede_social_candidato_2026` do TSE, importado por
+`scripts/update-data.mjs --redes=locais`. **Até 5 links por candidato**
+(`MAX_REDES`), escolhidos por esta ordem, que é também a ordem de exibição:
+
+```text
+ 1. Instagram          ┐
+ 2. X                  │
+ 3. TikTok             ├ as cinco vagas da tela
+ 4. Facebook           │
+ 5. YouTube            ┘
+ 6. site próprio
+ 7. Threads      8. LinkedIn   9. Kwai      10. Bluesky
+11. Spotify     12. SoundCloud 13. Flickr   14. Linktree
+15. Telegram    16. WhatsApp  ← último: abre conversa privada, não perfil
+```
+
+O site próprio ficou logo atrás das cinco de maior alcance: aparece sempre que
+falta alguma delas (2.393 vezes hoje), e só perde a vaga quando o candidato tem
+as cinco.
+
+Números da última importação: **51.483 linhas consideradas, 16.417 de 19.870
+candidaturas com rede (83%), 44.454 links**. Distribuição por card: 5.524 com um
+ícone, 3.419 com dois, 1.955 com três, 1.368 com quatro e 4.151 com os cinco
+(25%). Na tela: Instagram 15.920, Facebook 8.843, TikTok 6.835, X 4.107,
+Threads 2.724, YouTube 2.719, site próprio 2.393.
+
+O front também corta em cinco (`MAX_REDES` em `app.js`): a garantia de layout
+não pode depender de o arquivo de dados estar certo.
+
+### Onde os dados moram, e por quê
+
+As URLs de SP somam 299 KB (60 KB com gzip), e todas as 28 bases somam 2,3 MB.
+No `data/uf/SP.json` levariam o **primeiro carregamento** de 199 KB para quase
+500 KB, o que o §35 não aceita. Ficam em
+`data/redes/<escopo>.json`, carregados **em segundo plano logo após a base** -
+não sob demanda no clique, porque o `href` precisa existir no momento do toque:
+bloqueador de popup barra abertura de aba depois de um `await`. Sem o arquivo, o
+card simplesmente não mostra ícone (§44).
+
+### O campo `DS_URL` é texto livre
+
+Não é URL. É um campo onde o candidato digitou o que quis, e a importação existe
+quase toda por causa disso:
+
+```text
+HTTPS://WWW.INSTAGRAM.COM/FULANO      URL de verdade
+TWITTER - HTTPS://WWW.TWITTER.COM/…   URL dentro de frase   → extraída
+instagram.com/fulano                  domínio sem esquema   → ganha https://
+INSTAGRAM - @HELTONJUNIORBH           só o usuário          → ver "fallback"
+@LOBOPVH_RO                           usuário avulso        → ver "fallback"
+ANTONIA SALES                          nome de pessoa        → descartado
+igsh=b2Z0dWR0ZXA0anJz&utm_source=qr   pedaço de query       → descartado
+```
+
+79% das URLs vêm em **CAIXA ALTA**. Nome de usuário é insensível a caixa nas
+redes grandes, então o link sobrevive - mas identificador opaco não
+(`/share/` do Facebook, `/channel/` do YouTube, `youtu.be/…`): em maiúsculas
+está quebrado, e link morto é pior que ícone ausente, então é descartado. 22%
+trazem parâmetro de rastreio (`igsh`, `mibextid`, `utm_*`), que sai.
+
+### Quatro defeitos que só apareceram olhando candidato por candidato
+
+Os quatro foram encontrados conferindo nomes conhecidos, não pelos totais - os
+totais estavam ótimos em todas as versões erradas.
+
+**1. `NR_ORDEM_REDE_SOCIAL` era validada e nunca usada.** É a ordem que o
+próprio candidato declarou, e o CSV **não** vem ordenado por ela. Sem ela, a
+escolha dentro de cada rede era arbitrária: o site do Patrus Ananias saía
+`patrusgovernador.com.br` (ordem 5, que não responde) no lugar de
+`patrusananias.com.br` (ordem 1), e o Instagram do Lula saía `@brasilcomlula`
+(ordem 15) no lugar de `@lulaoficial` (ordem 1).
+
+**2. O TSE corta `DS_URL` em 80 caracteres.** 1.900 linhas param exatamente aí,
+contra ~150 em cada comprimento vizinho - é um degrau, não uma distribuição.
+Quase sempre o corte pega a query de rastreio, que a gente descarta de qualquer
+jeito e o perfil sobrevive inteiro; em 203 linhas ele decepa o caminho e o link
+nasce morto. Foi assim que o "site oficial" do Lula virou um endereço de podcast
+terminado em `/PODCAS`. Regra: linha cortada só vale como perfil de um nível
+(`/fulano`); caminho mais fundo, ou `/profile.php` sem a query, é descartado.
+
+**3. O balde `s` significava "domínio que não reconheço", e estava sendo
+apresentado como "site oficial".** Corrigido o item 2, a vaga do Lula foi para
+`deezer.com/ES/SHOW/…`. Agora `PLATAFORMA_GENERICA` (streaming, encurtador,
+loja de app, página de apoio, Google Docs) **perde a vez** para site próprio -
+não é descartada, só não passa na frente. O Lula passou a mostrar `lula.com.br`.
+
+**4. `BRASIL.csv` é agregado.** Repete linha por linha o que está nos arquivos
+por UF (conferido: os dois conjuntos de `(SQ_CANDIDATO, NR_ORDEM)` são
+idênticos, 52.550 cada). Ler os dois dobrava o trabalho e inflava 2x todos os
+números do relatório.
+
+### O `@usuário` como fallback
+
+2.621 linhas declaram só um usuário, sem link: `INSTAGRAM - @FULANO` (a rede
+dita por extenso) ou `@FULANO` avulso. O arroba rende até três links, em **dois
+níveis de confiança**:
+
+| nível | de onde vem | exemplo |
+| --- | --- | --- |
+| 0 declarado | URL no campo | `HTTPS://WWW.INSTAGRAM.COM/FULANO` |
+| 1 nomeado | a rede está escrita no texto; só o formato da URL é nosso | `INSTAGRAM - @FULANO` → Instagram |
+| 2 propagado | o mesmo usuário montado em cinco redes de perfil, sem o texto citá-las | `@FULANO` → Instagram, X, TikTok, Facebook, Threads |
+
+Os dois níveis existem porque a rede nomeada é declaração do candidato, e não
+pode ser empurrada para fora por palpites de prioridade mais alta: quem escreve
+`YOUTUBE - @FULANO` e tem duas vagas livres fica com o YouTube, não com
+Instagram + X inventados.
+
+Isso é **fallback, não dado declarado**:
+
+- perde para o link real da mesma rede;
+- só ocupa vaga que sobrou depois de todos os declarados;
+- nomeado antes de propagado.
+
+`WHATSAPP: @FULANO` não gera link de WhatsApp (lá o identificador é telefone,
+não há URL de perfil a montar), mas o usuário ao lado ainda propaga para
+Instagram e X - é um arroba, seja qual for o rótulo que ele escreveu.
+
+A razão de ser fallback está medida. Entre os candidatos que declararam
+Instagram **e** X de verdade, só **35%** usam o mesmo usuário nas duas
+(`@renanfilho` no Instagram é `@renanfilho_` no X; `@oficialarthurlira` é
+`@arthurlira_`). No Facebook são 32%, no TikTok 42%. Ou seja: usuário
+propagado de uma rede para outra erra com frequência, e errar aqui significa
+apontar para o perfil de outra pessoa com o nome e a foto do candidato ao lado.
+Verificar no build não resolve - X, Facebook e Instagram não deixam ler perfil
+sem sessão.
+
+Por isso o `@` propaga (é o que o candidato quis dizer ao digitar só o arroba, e
+não há link declarado competindo), mas **nunca** se completa uma rede a partir de
+outra já declarada.
+
+No limite - candidatura cuja única declaração é um arroba - isso dá **cinco
+ícones inferidos** num card. São 2.626 arrobas recuperados.
+
+### Para onde o arroba propaga, e por quê
+
+Medido entre quem declarou Instagram **e** a outra rede de verdade, quantos usam
+o mesmo usuário nas duas:
+
+| propagação | mesmo usuário | está no propagado? |
+| --- | --- | --- |
+| Instagram → Threads | **96%** | sim |
+| Instagram → TikTok | 42% | sim |
+| Instagram → YouTube | 37% | **não** |
+| Instagram → X | 35% | sim |
+| Instagram → Facebook | 32% | sim |
+
+O **Threads** é o melhor da lista por construção: a conta nasce do Instagram, no
+mesmo espaço de nomes da Meta, então o usuário é literalmente o mesmo.
+
+O **YouTube** ficou fora, e o motivo não é o número - é a natureza do erro. Lá o
+`@` é espaço de nomes separado, que precisa ser reivindicado; sem dono, a URL dá
+404. Nas outras, o palpite errado leva ao perfil de outra pessoa, o que é ruim
+mas é uma página real; no YouTube o palpite errado costuma ser página que não
+existe. Tirá-lo trocou 1.742 palpites de 37% por palpites de 96%: o quinto ícone
+de quem só declarou um arroba deixou de ser YouTube e passou a ser Threads.
+
+Fica registrado que, se o critério fosse só a taxa de acerto, X (35%) e Facebook
+(32%) não estão melhor que o YouTube - eles seguem no propagado por decisão de
+produto, não porque a medição os favoreça.
+
+Conferido na base inteira: **zero** substituições indevidas em **29.551** links
+que ocupam vaga de rede declarada com URL. O conferidor passa o normalizador do
+importador nos dois lados - comparar `href` publicado com texto cru dava 210
+falsos positivos só de `www`, `%C3%89` e `#`.
+
+### O usuário canônico desempata dentro da rede
+
+Honrar o `NR_ORDEM` resolveu a escolha entre redes diferentes, mas sobrou um
+caso: quando o candidato declara **dois perfis da mesma rede**, a ordem dele
+pode ser internamente inconsistente. O Lula é o exemplo:
+
+```text
+ordem  1 | INSTAGRAM.COM/LULAOFICIAL      ← perfil pessoal primeiro
+ordem 15 | INSTAGRAM.COM/BRASILCOMLULA
+ordem 16 | X.COM/OBRASILCOMLULA           ← conta de campanha primeiro
+ordem 17 | X.COM/LULAOFICIAL
+```
+
+Seguindo só a ordem, o card mostrava `@lulaoficial` no Instagram e
+`@obrasilcomlula` no X: duas contas diferentes da mesma pessoa, lado a lado.
+`usuarioCanonico()` conta em quantas redes **distintas** cada usuário aparece -
+`@lulaoficial` está em seis (Instagram, X, YouTube, TikTok, Kwai, Flickr) contra
+duas de `@obrasilcomlula` - e o canônico passa na frente dentro de cada rede.
+Exige presença em duas redes no mínimo (usuário visto numa só não é evidência de
+nada) e empate resolve pela menor ordem declarada.
+
+Escopo medido: 4.683 candidaturas têm usuário canônico identificável, e em
+**377 delas (415 redes)** o desempate muda a escolha. Nunca inventa link: só
+reordena entre URLs que o próprio candidato declarou.
+
+**Só link declarado vota.** Link inferido é construção nossa a partir de um
+arroba, então contá-lo como evidência daquele mesmo arroba é circular - e não é
+teórico: ao mexer no conjunto propagado, o `@ekedjiluferreira` inferido virou
+canônico em cinco candidaturas e trocou a URL **declarada** que ganhava no X. Um
+A/B do conjunto propagado pegou; hoje `usuarioCanonico()` ignora inferidos.
+
+### Dois defeitos que a conferência da invariante revelou
+
+Escrever o conferidor da invariante ("nenhum link publicado ocupa vaga de rede
+declarada sem vir dessa declaração") pagou por si:
+
+**Link para a home da rede.** 33 links eram só o domínio, sem caminho - vinham
+de linha como `HTTPS://WWW.INSTAGRAM.COM/HTTPS://WWW.THREADS.NET/@FULANO`, onde
+a URL de dentro é descartada e sobra o domínio. Numa rede a identidade está no
+caminho, então sem caminho o ícone leva à home do Instagram e não mostra
+ninguém. Site próprio, ao contrário, pode ser só o domínio.
+
+**Domínio que não existe.** `LUCIANALANA.PARTICULAR`, `@FULANO.OFICIAL`,
+`INSTAGRAM.COMLAINNIOSOARES` (barra esquecida depois do `.com`) passavam por
+"site próprio" porque casavam com o formato de domínio. Agora o TLD é conferido
+contra a **lista da IANA**, buscada no build (1.438 entradas, 10 KB).
+
+Se a IANA não responder, o filtro fica **desligado**, não reduzido a uma lista
+curta embutida. Essa foi a primeira versão, e o próprio conferidor mostrou o
+estrago: rodando com a lista curta ele acusou `bit.ly`, `flic.kr`,
+`biolink.website` e `felipebarcellos.sc` como substituições indevidas - quatro
+TLDs reais que a lista não tinha. Filtro de qualidade que falha para o lado de
+descartar dado bom é pior que filtro nenhum.
+
+### Descartes de segurança (§38)
+
+- **provedor de e-mail** no campo de URL (gmail, hotmail, outlook…): 8 linhas.
+  É endereço pessoal no lugar errado, e virar link seria vetor de spam;
+- **domínio-typo** de rede conhecida (`instagran.com`, `intagram.com`,
+  `instagram.com.br`): 120 linhas. Linkar typosquatting é entregar o usuário a
+  quem registrou o domínio errado de propósito. A regex exige o ponto: sem ele,
+  `youtub` casava com `youtube.com` e "achava" 5.960 typos;
+- só `https?`; o `href` passa por `urlDeRedeSegura()` no front;
+- o SVG de cada ícone é constante nossa - `innerHTML` nunca recebe dado do TSE.
+
+### No card
+
+Terceira linha do `.ident`, embaixo de partido + cargo. Ícones monocromáticos em
+`currentColor` (sem cor de marca: o card já é colorido pelo partido, e vitrine
+visual de campanha não é papel do produto), `clamp(13px, 3.6cqw, 16px)`, alvo de
+toque de **24px** garantido por `min-width`/`min-height` - só o `padding` ficava
+1px curto quando o ícone encolhia. Cada link leva `target="_blank"` e
+`rel="noopener noreferrer nofollow"` (o `nofollow` também diz "não é endosso") e
+um `aria-label` como *"Instagram de MAYA EXEMPLO (abre em nova aba)"*.
+
+**A armadilha:** o card escuta `pointerdown` **e** `click` para focar dígito
+(§26). Sem `stopPropagation()` nos dois, tocar no ícone também moveria o foco do
+número. Tem asserção para isso.
+
 ## 59.14. Publicação no GitHub Pages
 
 Nada de build: *Settings → Pages → Deploy from a branch → `main` / root*.
@@ -2451,10 +2698,20 @@ um arquivo `CNAME` com `santinho.art` e aponte o DNS.
 
 ## 59.15. Verificação
 
-`tests/interacao.mjs` — **644 asserções passando**, cobrindo os §48/§50 e mais.
-A suíte sobe o servidor estático, acha o Chrome e dirige um navegador de verdade.
-Ela serve `tests/fixtures/data` (base fictícia fixa), **não** `data/`: atualizar
-a base real do TSE não pode quebrar teste.
+Duas suítes, as duas no `npm test`:
+
+- `tests/importador.mjs` — **128 asserções**, sem rede e sem navegador. Importa
+  `scripts/update-data.mjs` com `SANTINHO_IMPORTADOR_TESTE=1` (que impede o
+  pipeline de rodar) e exercita as funções puras: URL dentro de texto livre,
+  domínio sem esquema, e-mail, domínio-typo, corte de 80 caracteres, caixa alta,
+  parâmetro de rastreio, `@usuário` como fallback em dois níveis, `NR_ORDEM`,
+  usuário canônico, plataforma vs. site próprio, TLD real, caminho vazio, dedupe
+  e corte em cinco. Os casos do Lula, do Patrus e do Helton
+  estão lá como regressão, com o nome deles no rótulo.
+- `tests/interacao.mjs` — **666 asserções passando**, cobrindo os §48/§50 e mais.
+  A suíte sobe o servidor estático, acha o Chrome e dirige um navegador de
+  verdade. Ela serve `tests/fixtures/data` (base fictícia fixa), **não** `data/`:
+  atualizar a base real do TSE não pode quebrar teste.
 
 ```bash
 npm install        # puppeteer-core, só para os testes
@@ -2567,6 +2824,14 @@ quatro nomes mais longos da base (30 caracteres) renderizando inteiros em
 320×640 e 390×844, e as fotos oficiais carregando nos seis cards sem nenhuma
 requisição falhando.
 
+Nas redes sociais, conferido candidato por candidato contra o CSV bruto do TSE -
+foi assim que os quatro defeitos de 59.13-A apareceram. Os links escolhidos para
+Lula e Patrus foram verificados por HTTP: `lula.com.br` e `patrusananias.com.br`
+respondem 200; `patrusgovernador.com.br` e `mercadodamentira.com.br`, que a
+versão errada exibia, não respondem. Screenshot em 320×568 e 390×844 com a linha
+de cinco ícones: zero scroll, zero overflow, alvo mínimo de 24px, sem quebra de
+linha (22px de sobra na coluna no pior caso, 320×640) e nenhum erro de console.
+
 ## 59.16. Pendências conscientes
 
 - **`og:image`**: `og.png` (1200×630) está no repositório; a fonte é
@@ -2583,3 +2848,10 @@ requisição falhando.
   de eleição vale reconferir sigla por sigla. Ver 59.6.
 - **Situação da candidatura**: quando o TSE publicar o julgamento, remover `N` de
   `SITUACOES_EXIBIVEIS` em `app.js`. Ver 59.4.
+- **Redes sociais**: 3.206 domínios caem no ícone genérico de site. O relatório
+  do importador imprime os 20 mais frequentes justamente para a tabela `REDES` e
+  a lista `PLATAFORMA_GENERICA` crescerem com evidência, não com chute. Ver
+  59.13-A.
+- **Links não são verificados no build**: 44.454 links, e as redes grandes não
+  deixam checar perfil sem sessão. Um link declarado pode estar fora do ar - a
+  ordem declarada pelo candidato é o melhor sinal disponível. Ver 59.13-A.

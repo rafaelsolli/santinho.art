@@ -184,6 +184,93 @@ function candidaturaExibivel(candidate) {
   return SITUACOES_EXIBIVEIS.has(String(candidate.sit).toUpperCase());
 }
 
+/* --------------------------------------------------------- redes sociais */
+
+/* Ícones desenhados aqui, aproximações geométricas das marcas — nada de asset
+ * de terceiro (§36) nem cor de marca, para não virar vitrine visual de campanha.
+ * Traço em currentColor, no mesmo estilo dos outros ícones do app. */
+const ICONES_REDE = {
+  i: ['Instagram', '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/>' +
+      '<circle cx="17.1" cy="6.9" r="1.1" fill="currentColor" stroke="none"/>'],
+  f: ['Facebook', '<circle cx="12" cy="12" r="9"/><path d="M14.9 8.1h-1.7c-1 0-1.6.6-1.6 1.6V21"/>' +
+      '<path d="M9.4 13.1h4.7"/>'],
+  x: ['X', '<path d="M5.2 5.2l13.6 13.6M18.8 5.2L5.2 18.8"/>'],
+  y: ['YouTube', '<rect x="2.5" y="5.5" width="19" height="13" rx="4.2"/>' +
+      '<path d="M10.4 9.4l5.4 2.6-5.4 2.6z" fill="currentColor" stroke="none"/>'],
+  t: ['TikTok', '<path d="M14.6 3.4v10a3.8 3.8 0 1 1-3.8-3.8"/>' +
+      '<path d="M14.6 3.4c.4 2.4 2 4 4.4 4.3"/>'],
+  h: ['Threads', '<path d="M12.4 21c-5.2 0-8.4-3.5-8.4-9s3.2-9 8.4-9c3.5 0 5.9 1.6 6.9 4.2"/>' +
+      '<path d="M12.2 16.8c-2 0-3.3-1-3.3-2.4 0-1.5 1.5-2.4 3.5-2.3 2.4.1 3.8 1.4 3.8 3.4 0 2.5-2 4-4.5 4"/>'],
+  l: ['LinkedIn', '<rect x="3" y="3" width="18" height="18" rx="3.4"/>' +
+      '<path d="M7.5 10.6V17M7.5 7.4v.2"/><path d="M11.6 17v-3.9a2.6 2.6 0 0 1 5.2 0V17"/>'],
+  w: ['WhatsApp', '<path d="M20 11.8a8 8 0 0 1-11.9 7L4 20l1.2-4.1A8 8 0 1 1 20 11.8z"/>' +
+      '<path d="M9.4 9.5c0 2.7 2.4 5.1 5.1 5.1l.9-1.2-1.7-1-.9.8c-.9-.4-1.6-1.1-2-2l.8-.9-1-1.7z"' +
+      ' fill="currentColor" stroke="none"/>'],
+  k: ['Kwai', '<circle cx="12" cy="12" r="9"/>' +
+      '<path d="M10.1 8.4l5.2 3.6-5.2 3.6z" fill="currentColor" stroke="none"/>'],
+  g: ['Telegram', '<path d="M21 4.2L3 11.1l5.1 2 1.9 5.9 3.1-3.9 5 2.9z"/>'],
+  b: ['Bluesky', '<path d="M12 13.6C10 9.1 6.4 6 4.4 6.6c-1.5.5-1 3.9.6 5.5 1 1 2.4 1.4 3.6 1.4' +
+      '-1.2.3-2.4 1-2 2.6.4 1.7 2.5 2.4 3.9 1 .8-.8 1.2-1.8 1.5-2.5.3.7.7 1.7 1.5 2.5' +
+      '1.4 1.4 3.5.7 3.9-1 .4-1.6-.8-2.3-2-2.6 1.2 0 2.6-.4 3.6-1.4 1.6-1.6 2.1-5 .6-5.5' +
+      'C17.6 6 14 9.1 12 13.6z"/>'],
+  p: ['Spotify', '<circle cx="12" cy="12" r="9"/>' +
+      '<path d="M7.5 9.3c3-.7 6.3-.3 8.7 1.2M8.2 12.5c2.4-.5 5-.2 7 1.1M8.9 15.6c1.9-.4 4-.2 5.6.9"/>'],
+  o: ['SoundCloud', '<path d="M6 16.2v-4.8M9.1 16.2V9.1M12.2 16.2V8.2M15.3 16.2v-5.8"/>' +
+      '<path d="M17.4 16.2a3.1 3.1 0 0 0 0-6.2c-.3 0-.6 0-.9.1"/>'],
+  c: ['Flickr', '<circle cx="8.1" cy="12" r="3.5" fill="currentColor" stroke="none"/>' +
+      '<circle cx="15.9" cy="12" r="3.5"/>'],
+  n: ['Linktree', '<path d="M12 21v-6.8M12 14.2l-4.2-4.3M12 14.2l4.2-4.3M7.8 5.9L12 10.2l4.2-4.3"/>'],
+  s: ['site', '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>' +
+      '<path d="M12 3c2.6 2.5 4 5.6 4 9s-1.4 6.5-4 9c-2.6-2.5-4-5.6-4-9s1.4-6.5 4-9z"/>'],
+};
+
+const redes = new Map();            // escopo -> { status, porSq }
+const carregandoRedes = new Map();
+
+/* Carregada em segundo plano, depois da base: para abrir link em nova aba o
+ * href precisa existir no momento do toque — bloqueador de popup barra abertura
+ * depois de um await. Falha silenciosa: sem arquivo, sem ícone (§44). */
+function carregarRedes(escopo) {
+  if (redes.has(escopo)) return Promise.resolve(redes.get(escopo));
+  if (carregandoRedes.has(escopo)) return carregandoRedes.get(escopo);
+
+  const p = fetch('data/redes/' + escopo + '.json')
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(json => ({ status: 'ok', porSq: json }))
+    .catch(() => ({ status: 'error', porSq: {} }))
+    .then(dados => {
+      redes.set(escopo, dados);
+      carregandoRedes.delete(escopo);
+      renderAll();
+      return dados;
+    });
+
+  carregandoRedes.set(escopo, p);
+  return p;
+}
+
+/* O importador já corta em cinco; o teto aqui é para a garantia de layout não
+ * depender do arquivo de dados estar certo. */
+const MAX_REDES = 5;
+
+function redesDoCandidato(escopo, sq) {
+  const dados = redes.get(escopo);
+  if (!dados || dados.status !== 'ok' || !sq) return null;
+  const lista = dados.porSq[sq];
+  return lista && lista.length ? lista.slice(0, MAX_REDES) : null;
+}
+
+/* Só https, e só o que o importador já classificou. Irmã de fotoUrlSegura(). */
+function urlDeRedeSegura(url) {
+  if (typeof url !== 'string' || !url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' ? u.href : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /* ------------------------------------------------------------- resolução */
 
 function escopoDo(cargo) { return cargo.nacional ? 'BR' : state.uf; }
@@ -209,7 +296,7 @@ function resolveCandidate(cargo) {
     const c = (base.cargos[cargo.base] || {})[digits.join('')];
     if (candidaturaExibivel(c)) {
       const foto = c.foto || (c.f ? fotoLocal(escopoDo(cargo), c.sq) : null);
-      return { estado: 'valido', nome: c.n, party: c.p, foto };
+      return { estado: 'valido', nome: c.n, party: c.p, foto, sq: c.sq };
     }
     return { estado: 'invalido' };
   }
@@ -715,7 +802,9 @@ function montarCards() {
     office.className = 'office';
     office.textContent = nomeCurtoDoCargo(cargo);
     metaLinha.append(party, office);
-    ident.append(name, metaLinha);
+    const redesEl = document.createElement('div');
+    redesEl.className = 'redes';
+    ident.append(name, metaLinha, redesEl);
 
     const numwrap = document.createElement('div');
     numwrap.className = 'numwrap';
@@ -753,7 +842,8 @@ function montarCards() {
     card.append(band, photo, ident, numwrap);
     els.cards.appendChild(card);
 
-    cargo.el = { card, img, semFoto, name, party, office, digits: digitEls, input, hint };
+    cargo.el = { card, img, semFoto, name, party, office, redes: redesEl,
+                 digits: digitEls, input, hint };
     ligarEventos(cargo);
   }
 }
@@ -1470,12 +1560,61 @@ function renderCard(cargo) {
     el.semFoto.hidden = false;
   }
 
+  renderRedes(cargo, r);
+
   const posicao = focado ? ', dígito ' + (state.focus.index + 1) + ' de ' + cargo.len : '';
   el.input.setAttribute('aria-label', nomeDoCargo(cargo) + ', número de ' + cargo.len + ' dígitos');
   el.hint.textContent = (r.estado === 'valido' ? r.nome + ', ' + sigla
                         : TAGS[r.estado].texto) + posicao;
   if (r.estado === 'valido') el.name.title = r.nome;
   else el.name.removeAttribute('title');
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/* Até três links, na ordem que o importador já definiu. Remonta só quando o
+ * candidato muda, para não refazer DOM a cada tecla digitada. */
+function renderRedes(cargo, r) {
+  const el = cargo.el.redes;
+  const lista = r.estado === 'valido' ? redesDoCandidato(escopoDo(cargo), r.sq) : null;
+  const chave = lista ? escopoDo(cargo) + '|' + r.sq : '';
+  if (el.dataset.chave === chave) return;
+  el.dataset.chave = chave;
+  el.replaceChildren();
+  if (!lista) return;
+
+  for (const [cod, url] of lista) {
+    const seguro = urlDeRedeSegura(url);
+    if (!seguro) continue;
+    const [nome, desenho] = ICONES_REDE[cod] || ICONES_REDE.s;
+
+    const a = document.createElement('a');
+    a.className = 'rede';
+    a.href = seguro;
+    a.target = '_blank';
+    /* nofollow também diz "não é endosso" */
+    a.rel = 'noopener noreferrer nofollow';
+    a.setAttribute('aria-label', nome + ' de ' + r.nome + ' (abre em nova aba)');
+
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.9');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    /* innerHTML aqui é constante nossa, nunca dado do TSE (§38) */
+    svg.innerHTML = desenho;
+    a.appendChild(svg);
+
+    /* o card escuta pointerdown E click para focar dígito (§26): sem parar a
+     * propagação, tocar no ícone também moveria o foco do número */
+    for (const evento of ['pointerdown', 'click']) {
+      a.addEventListener(evento, e => e.stopPropagation());
+    }
+    el.appendChild(a);
+  }
 }
 
 function renderAll() { for (const cargo of CARGOS) renderCard(cargo); }
@@ -1919,6 +2058,8 @@ function trocarUf(novaUf) {
     renderAll();
     atualizarStatus();
     agendarImagem();
+    carregarRedes(state.uf);
+    carregarRedes('BR');
   });
 }
 
@@ -1952,6 +2093,8 @@ function init() {
     renderAll();
     atualizarStatus();
     agendarImagem();
+    carregarRedes(state.uf);
+    carregarRedes('BR');
   });
 }
 

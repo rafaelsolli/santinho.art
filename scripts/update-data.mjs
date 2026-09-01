@@ -72,6 +72,233 @@ const FOTOS_ZIP_URL = (uf, ano) =>
 
 const FOTO_ARQUIVO = /^F[A-Z]{2}(\d+)_div\.jpe?g$/i;
 
+/* Redes sociais: CONFIRMADO em 2026-08-31. Um zip nacional com um CSV por UF,
+ * mais BRASIL.csv (agregado) e BR.csv (presidência). 105.100 linhas. */
+const REDES_ZIP_URL = ano =>
+  `https://cdn.tse.jus.br/estatistica/sead/odsele/consulta_cand/rede_social_candidato_${ano}.zip`;
+
+const COLUNAS_REDES = ['SG_UF', 'SQ_CANDIDATO', 'NR_ORDEM_REDE_SOCIAL', 'DS_URL'];
+
+/* Domínio → código da rede. O casamento é por **sufixo**, então um domínio
+ * cobre seus subdomínios: `facebook.com` pega `web.`, `m.`, `pt-br.`, e
+ * `instagram.com` pega o `l.instagram.com` que o próprio Instagram usa como
+ * intermediário. A tabela cresce olhando o relatório do build, que lista os
+ * domínios mais frequentes caídos no genérico. */
+const REDES = [
+  ['instagram.com', 'i'],
+  ['facebook.com', 'f'], ['m.me', 'f'], ['fb.com', 'f'], ['fb.watch', 'f'],
+  ['tiktok.com', 't'],
+  ['youtube.com', 'y'], ['youtu.be', 'y'],
+  ['x.com', 'x'], ['twitter.com', 'x'],
+  ['threads.com', 'h'], ['threads.net', 'h'],
+  ['linkedin.com', 'l'],
+  ['kwai.com', 'k'], ['kwai-video.com', 'k'], ['kw.ai', 'k'],
+  ['bsky.app', 'b'],
+  ['spotify.com', 'p'],
+  ['soundcloud.com', 'o'],
+  ['flickr.com', 'c'],
+  ['linktr.ee', 'n'], ['tr.ee', 'n'], ['beacons.ai', 'n'], ['bio.link', 'n'],
+  ['t.me', 'g'], ['telegram.me', 'g'], ['telegram.org', 'g'],
+  ['whatsapp.com', 'w'], ['wa.me', 'w'],
+];
+
+const codigoDaRede = host => {
+  for (const [dominio, cod] of REDES) {
+    if (host === dominio || host.endsWith('.' + dominio)) return cod;
+  }
+  return 's';
+};
+
+/* Duas formas de declarar sem link nenhum: "INSTAGRAM - @FULANO" (849 linhas,
+ * a rede dita por extenso) e "@FULANO" avulso (1.670 linhas). Nas duas dá para
+ * montar a URL; no @ avulso, sem rede nomeada, montamos Instagram e X.
+ *
+ * Isso é FALLBACK, não dado declarado: perde para o link real da mesma rede e
+ * só ocupa vaga que sobrou depois dos declarados. A razão está medida - entre
+ * quem declarou Instagram E X de verdade, só 35% usam o mesmo usuário nas duas
+ * (32% no Facebook, 42% no TikTok), então usuário inferido erra com frequência.
+ * WhatsApp fica de fora porque lá o identificador é telefone, não usuário. */
+const REDE_POR_NOME = [
+  [/\bINSTAGRAM\b|\bINSTA\b/i, 'i'],
+  [/\bFACEBOOK\b|\bFACE\b|\bFB\b/i, 'f'],
+  [/\bTIK\s?TOK\b/i, 't'],
+  [/\bYOU\s?TUBE\b/i, 'y'],
+  [/\bTWITTER\b/i, 'x'],
+  [/\bTHREADS\b/i, 'h'],
+  [/\bLINKED\s?IN\b/i, 'l'],
+  [/\bKWAI\b/i, 'k'],
+  [/\bTELEGRAM\b/i, 'g'],
+  [/\bBLUESKY\b/i, 'b'],
+  /* nomeada mas sem montador: no WhatsApp o identificador é telefone, então não
+     há URL de perfil a montar. O @usuário ao lado ainda serve de propagado. */
+  [/\bWHATSAPP\b|\bZAP\b/i, 'w'],
+];
+
+const PERFIL_DE_REDE = {
+  i: h => 'https://instagram.com/' + h.toLowerCase(),
+  f: h => 'https://facebook.com/' + h.toLowerCase(),
+  x: h => 'https://x.com/' + h.toLowerCase(),
+  t: h => 'https://tiktok.com/@' + h.toLowerCase(),
+  y: h => 'https://youtube.com/@' + h,
+  h: h => 'https://threads.com/@' + h.toLowerCase(),
+  l: h => 'https://linkedin.com/in/' + h.toLowerCase(),
+  k: h => 'https://kwai.com/@' + h.toLowerCase(),
+  g: h => 'https://t.me/' + h,
+  b: h => 'https://bsky.app/profile/' + h.toLowerCase(),
+};
+
+/* só ASCII: nome de usuário com acento existe (YouTube aceita), mas montar a
+ * URL a partir de texto solto acentuado erra mais do que acerta */
+const USUARIO = /@\s*([A-Za-z0-9._-]{2,40})/;
+
+/* Redes inferidas quando o texto não nomeia nenhuma. O @ avulso é quase sempre
+ * Instagram; X entra atrás dele, e as duas só aparecem como fallback. */
+/* Um @usuário rende, no máximo, três coisas:
+ *
+ *   NOMEADO      a rede que o próprio texto cita ("INSTAGRAM - @FULANO"): a rede
+ *                é declaração dele, só o formato da URL é nosso;
+ *   PROPAGADO    Instagram, X, TikTok, Facebook e Threads montados do mesmo
+ *                usuário, mesmo sem o texto citá-los. Quem escreve só o arroba
+ *                está falando de alguma dessas - mas de qual, e se o usuário é
+ *                o mesmo em todas, é aposta nossa. Quem só declarou um @ fica,
+ *                no limite, com cinco ícones inferidos: é o caso de aposta
+ *                máxima.
+ *
+ *                YouTube ficou FORA de propósito: lá o @ é espaço de nomes
+ *                separado, que precisa ser reivindicado, e sem dono a URL dá
+ *                404 - o palpite não erra de perfil, erra de página. Threads é
+ *                o oposto e o melhor da lista: a conta nasce do Instagram, com
+ *                o mesmo usuário.
+ *
+ *                Medido, entre quem declarou Instagram e a outra rede de
+ *                verdade: mesmo usuário em 96% no Threads, 42% no TikTok, 37%
+ *                no YouTube, 35% no X e 32% no Facebook.
+ *
+ * Os dois níveis existem para o nomeado nunca perder vaga para o propagado. */
+const NOMEADO = 1, PROPAGADO = 2;
+const INFERIDAS = ['i', 'x', 't', 'f', 'h'];
+
+/* Devolve [[cod, url, nivel], ...] a partir de texto livre, ou [] quando não há
+ * nada aproveitável. */
+function perfisDeTextoLivre(texto) {
+  const m = texto.match(USUARIO);
+  if (!m) return [];
+  /* "@fulano@gmail.com" é e-mail escrito com arroba na frente, não usuário */
+  if (texto[m.index + m[0].length] === '@') return [];
+  const usuario = m[1].replace(/[._-]+$/, '');
+  if (usuario.length < 2) return [];
+  /* "@fulano.com.br" é domínio no campo errado, e "@gmail.com" é e-mail */
+  if (/\.[a-z]{2,}$/i.test(usuario)) return [];
+
+  const nomeada = REDE_POR_NOME.find(([re]) => re.test(texto));
+  const niveis = new Map();
+  if (nomeada) niveis.set(nomeada[1], NOMEADO);
+  for (const cod of INFERIDAS) if (!niveis.has(cod)) niveis.set(cod, PROPAGADO);
+
+  return [...niveis]
+    .filter(([cod]) => PERFIL_DE_REDE[cod])
+    .map(([cod, nivel]) => [cod, PERFIL_DE_REDE[cod](usuario), nivel]);
+}
+
+
+
+/* Dentro do balde genérico "site" moram duas coisas bem diferentes: o site
+ * próprio do candidato e uma página dele numa plataforma qualquer (catálogo de
+ * streaming, encurtador, listagem de app, página de apoio). Só a primeira é o
+ * "site oficial" que a prioridade promete. Sem separar, o Lula aparecia com um
+ * link de podcast no lugar de lula.com.br. Não descartamos a plataforma: ela só
+ * perde a vez para o site próprio. */
+const PLATAFORMA_GENERICA = [
+  'deezer.com', 'music.amazon.com', 'music.amazon.com.br', 'music.apple.com',
+  'podcasts.apple.com', 'apps.apple.com', 'play.google.com',
+  'docs.google.com', 'drive.google.com', 'share.google', 'sites.google.com',
+  'bit.ly', 'tinyurl.com', 'cutt.ly', 'encurtador.com.br',
+  'twibbonize.com', 'twb.nz', 'sticker.ly', 'bio.site',
+  'queroapoiar.com.br', 'apoio.top', 'apoiar.me',
+  'tse.jus.br',   /* houve quem colasse a URL do formulário de candidatura */
+];
+
+const ehPlataforma = host =>
+  PLATAFORMA_GENERICA.some(d => host === d || host.endsWith('.' + d));
+
+/* Ordem de exibição, e ordem do corte em MAX_REDES. As cinco redes de maior
+ * alcance na frente, por pedido de produto; WhatsApp por último, porque abre
+ * conversa privada e não perfil. */
+const PRIORIDADE_REDES =
+  ['i', 'x', 't', 'f', 'y', 's', 'h', 'l', 'k', 'b', 'p', 'o', 'c', 'n', 'g', 'w'];
+/*  instagram x tiktok facebook youtube | site threads linkedin kwai bluesky
+    spotify soundcloud flickr linktree telegram whatsapp
+
+    As cinco primeiras são as cinco vagas da tela. O site próprio vem logo
+    atrás: aparece sempre que falta alguma das cinco, e só perde quando o
+    candidato tem todas. */
+
+const MAX_REDES = 5;
+
+/* Parâmetros de rastreio: sujam o link, não fazem falta e ainda carregam
+ * identificador sensível a caixa. 22% das URLs trazem algum. */
+const PARAM_DE_RASTREIO =
+  /^(igsh|igshid|xmt|_r|_t|_u|mibextid|fbclid|gclid|si|is|feature|ref|ref_src|ref_url|utm_[a-z_]+)$/i;
+
+/* O TSE grava 79% das URLs em CAIXA ALTA. Nome de usuário é insensível a caixa
+ * em todas as redes grandes, então o link continua funcionando — mas caminho de
+ * identificador opaco (/share/ do Facebook, /channel/ do YouTube, youtu.be) NÃO
+ * é: em maiúsculas está quebrado. Melhor não oferecer link morto. */
+const CAMINHO_OPACO = /^\/(share|channel|watch|reel|p|video|posts)\b/i;
+
+/* O TSE corta DS_URL em 80 caracteres: 1.900 linhas param exatamente aí, contra
+ * ~150 em cada comprimento vizinho. Quase sempre o corte cai na query de
+ * rastreio, que a gente joga fora de qualquer jeito; mas em 203 linhas ele
+ * decepa o caminho e o link nasce morto - foi assim que o "site oficial" do
+ * Lula virou um endereço de podcast terminado em "/PODCAS". */
+const CORTE_DO_TSE = 80;
+
+/* O campo é texto livre, e sem checar o TLD viravam "site próprio" coisas como
+ * "@FULANO.OFICIAL", "LUCIANALANA.PARTICULAR" e "INSTAGRAM.COMLAINNIOSOARES"
+ * (barra esquecida depois do .com) - domínios que não existem.
+ *
+ * A lista da IANA é a única fonte que resolve isso sem chute. Se ela não
+ * responder, o filtro fica DESLIGADO, não reduzido a uma lista curta: uma lista
+ * pela metade derrubaria link bom em silêncio (`.website`, `.ly`, `.kr`, `.sc`
+ * são reais e apareceram na base). Voltam ~30 links de domínio inexistente, o
+ * que é bem menos grave, e o log diz que aconteceu. */
+const TLD_URL = 'https://data.iana.org/TLD/tlds-alpha-by-domain.txt';
+let TLDS = null;
+
+/* usada pelos testes, para exercitar a regra com uma lista conhecida */
+function definirTlds(lista) { TLDS = lista ? new Set(lista) : null; }
+
+async function carregarTlds() {
+  try {
+    const r = await fetch(TLD_URL, { headers: { 'User-Agent': UA },
+                                     signal: AbortSignal.timeout(30000) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const lista = (await r.text()).split('\n')
+      .map(l => l.trim().toLowerCase())
+      .filter(l => l && !l.startsWith('#'));
+    if (lista.length < 500) throw new Error('lista curta demais (' + lista.length + ')');
+    definirTlds(lista);
+    log('  ' + TLDS.size + ' TLDs válidos, da IANA');
+  } catch (e) {
+    definirTlds(null);
+    log('  ⚠ IANA indisponível (' + e.message + ') — sem checagem de TLD nesta rodada');
+  }
+}
+
+
+
+/* redes cujo @ é insensível a caixa: dá para normalizar o caminho e ainda
+ * conserta coisas como /PROFILE.PHP, que em maiúsculas o Facebook não serve */
+const CAIXA_LIVRE = new Set(['i', 'f', 'x', 't', 'h']);
+
+/* Endereço de e-mail no campo de URL: virar link seria vetor de spam. */
+const PROVEDOR_DE_EMAIL = /^(gmail|hotmail|outlook|yahoo|live|icloud|bol|uol|terra|msn)\./;
+
+/* Erro de digitação em domínio de rede conhecida. Não são linkados: quem
+ * registra o domínio errado de propósito conta com esse clique. */
+const DOMINIO_TYPO =
+  /^(instagran|intagram|instragram|instagam|nstagram|instragam|faceboock|facebok|facebbok|twiter|youtub)\.|^(instagram|facebook|youtube|tiktok)\.com\.br$/;
+
 /* Colunas exigidas. Se qualquer uma faltar, o script aborta. */
 const COLUNAS_EXIGIDAS = [
   'ANO_ELEICAO', 'NR_TURNO', 'SG_UF', 'CD_CARGO', 'DS_CARGO',
@@ -147,6 +374,10 @@ const DRY_RUN = flag('dry-run');
  * de 19 mil registros e deixar data/photos órfão. */
 const TEM_FOTOS_LOCAIS = existsSync(new URL('../data/photos', import.meta.url).pathname);
 const MODO_FOTOS = opt('fotos') || (TEM_FOTOS_LOCAIS ? 'locais' : 'nenhuma');
+
+/* mesma postura das fotos: rodar sem a flag não pode apagar o que já existe */
+const TEM_REDES_LOCAIS = existsSync(new URL('../data/redes', import.meta.url).pathname);
+const MODO_REDES = opt('redes') || (TEM_REDES_LOCAIS ? 'locais' : 'nenhuma');
 const RAIZ = new URL('..', import.meta.url).pathname;
 
 class ErroDeSchema extends Error {}
@@ -188,22 +419,26 @@ function lerCsv(buf) {
   return { header, linhas: linhas.slice(1) };
 }
 
-function validarHeader(header, arquivo) {
-  const faltando = COLUNAS_EXIGIDAS.filter(c => !header.includes(c));
+function validarHeader(header, arquivo, exigidas = COLUNAS_EXIGIDAS, nomeDaLista = 'COLUNAS_EXIGIDAS') {
+  const faltando = exigidas.filter(c => !header.includes(c));
   if (faltando.length) {
     throw new ErroDeSchema(
       'schema do TSE mudou em ' + arquivo + '\n' +
       '  colunas exigidas ausentes: ' + faltando.join(', ') + '\n' +
       '  colunas encontradas (' + header.length + '): ' + header.join(', ') + '\n' +
-      '  → confira COLUNAS_EXIGIDAS em scripts/update-data.mjs (§53)'
+      '  → confira ' + nomeDaLista + ' em scripts/update-data.mjs (§53)'
     );
   }
 }
 
 /* -------------------------------------------------------------- entrada */
 
+/* diretório único por chamada: com um nome fixo, extrair um segundo zip
+ * enquanto o primeiro ainda está em uso misturava os dois conteúdos */
+let extracoes = 0;
+
 function extrairZip(zip) {
-  const destino = join(tmpdir(), 'santinho-tse-' + process.pid);
+  const destino = join(tmpdir(), 'santinho-tse-' + process.pid + '-' + (++extracoes));
   mkdirSync(destino, { recursive: true });
   try {
     execFileSync('unzip', ['-o', '-q', zip, '-d', destino], { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -403,6 +638,33 @@ function processar(arquivos) {
  * cada registro com o caminho relativo do arquivo salvo. */
 async function baixarFotos(bases) {
   const dirFotos = join(RAIZ, 'data', 'photos');
+
+  /* Se as fotos já estão em disco, só reaponta os registros — rebaixar 113 MB
+   * a cada execução para recalcular a mesma flag é desperdício. --fotos=refazer
+   * força o download. */
+  if (MODO_FOTOS !== 'refazer' && existsSync(dirFotos)) {
+    let reaproveitadas = 0;
+    for (const [uf, base] of bases) {
+      const dirUf = join(dirFotos, uf);
+      if (!existsSync(dirUf)) continue;
+      const temFoto = new Set();
+      for (const arquivo of readdirSync(dirUf)) {
+        const m = FOTO_ARQUIVO.exec(arquivo);
+        if (m) temFoto.add(m[1]);
+      }
+      for (const cargo of Object.values(base.cargos)) {
+        for (const c of Object.values(cargo)) {
+          if (c.sq && temFoto.has(c.sq)) { c.f = 1; reaproveitadas++; }
+        }
+      }
+    }
+    if (reaproveitadas) {
+      log('  ' + reaproveitadas + ' fotos reaproveitadas de data/photos ' +
+          '(use --fotos=refazer para baixar de novo)');
+      return { salvas: reaproveitadas, semFoto: 0 };
+    }
+  }
+
   rmSync(dirFotos, { recursive: true, force: true });   // evita foto órfã
   mkdirSync(dirFotos, { recursive: true });
 
@@ -464,6 +726,290 @@ async function baixarFotos(bases) {
   return { salvas, semFoto };
 }
 
+/* --------------------------------------------------------- redes sociais */
+
+/* O campo DS_URL é texto livre na prática: 10% das linhas não trazem URL alguma
+ * ("@LOBOPVH_RO", "INSTAGRAM: @nome") e 6% embutem a URL numa frase
+ * ("TWITTER - HTTPS://WWW.TWITTER.COM/..."). Devolve { host, url } ou null. */
+function normalizarUrlRede(bruto) {
+  let u = (bruto || '').trim();
+  if (!u) return null;
+  const truncado = u.length === CORTE_DO_TSE;
+
+  /* para em um segundo "https://": há linha com duas URLs coladas */
+  const embutida = u.match(/https?:\/\/(?:(?!https?:\/\/)[^\s"<>])+/i);
+  if (embutida) u = embutida[0];
+  else if (/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(\/|\?|$)/i.test(u)) u = 'https://' + u;
+  else return null;   /* texto livre é assunto de perfisDeTextoLivre() */
+
+  try {
+    const o = new URL(u);
+    if (!/^https?:$/.test(o.protocol)) return null;
+    const host = o.hostname.toLowerCase().replace(/^www\./, '');
+    if (!host.includes('.')) return null;
+    if (TLDS && !TLDS.has(host.split('.').pop())) return null;
+
+    for (const chave of [...o.searchParams.keys()]) {
+      if (PARAM_DE_RASTREIO.test(chave)) o.searchParams.delete(chave);
+    }
+    o.hash = '';
+
+    const cod = codigoDaRede(host);
+    /* normaliza o host só de rede conhecida: site próprio pode depender do www */
+    if (cod !== 's') o.hostname = host;
+    const semMinuscula = !/[a-z]/.test(o.pathname);
+    if (semMinuscula && (CAMINHO_OPACO.test(o.pathname) || host === 'youtu.be')) return null;
+    if (CAIXA_LIVRE.has(cod)) o.pathname = o.pathname.toLowerCase();
+
+    /* De uma linha cortada só dá para aproveitar o perfil de um nível só
+     * (/fulano): ali o corte pegou a query, que a gente descartaria de todo
+     * jeito. Caminho mais fundo veio decepado, e /profile.php sem a query não
+     * identifica ninguém. */
+    if (truncado) {
+      o.search = '';
+      const niveis = o.pathname.split('/').filter(Boolean);
+      if (niveis.length > 1 || /\.php$/i.test(o.pathname)) return null;
+    }
+
+    /* Numa rede a identidade está no caminho: sem caminho, o link cai na home
+     * da rede e não mostra ninguém. Aparecia 33 vezes, de linha como
+     * "INSTAGRAM.COM/HTTPS://WWW.THREADS.NET/@FULANO", onde a URL de dentro é
+     * descartada e sobra só o domínio. Site próprio pode ser só o domínio. */
+    if (cod !== 's' && o.pathname === '/') return null;
+
+    return { host, cod, url: o.href };
+  } catch (_) {
+    return null;
+  }
+}
+
+/* Primeiro trecho do caminho que não é usuário, e sim prefixo de rota ou
+ * identificador opaco */
+const CAMINHO_SEM_USUARIO = new Set(['profile.php', 'people', 'share', 'channel',
+  'watch', 'reel', 'p', 'video', 'posts', 'in', 'photos', 'user', 'u', 'c',
+  'show', 'artist', 'pages', 'groups']);
+
+function usuarioDaUrl(url) {
+  try {
+    const seg = new URL(url).pathname.split('/').filter(Boolean);
+    if (!seg.length) return null;
+    const u = decodeURIComponent(seg[0]).replace(/^@/, '').toLowerCase();
+    if (CAMINHO_SEM_USUARIO.has(u)) return null;
+    return /^[a-z0-9._-]{2,40}$/.test(u) ? u : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/* O usuário que o candidato repete em mais redes distintas.
+ *
+ * Serve de desempate dentro de uma rede em que ele declarou mais de um perfil.
+ * O Lula é o caso: ele pôs @lulaoficial em primeiro no Instagram, mas no X
+ * deixou @obrasilcomlula (ordem 16) na frente de @lulaoficial (ordem 17) - e o
+ * card mostrava duas contas diferentes da mesma pessoa, lado a lado. Contando
+ * as redes, @lulaoficial aparece em seis (Instagram, X, YouTube, TikTok, Kwai,
+ * Flickr) contra duas de @obrasilcomlula, então ele é o canônico.
+ *
+ * Exige presença em pelo menos duas redes DECLARADAS: usuário visto numa só não
+ * é evidência de nada, e usuário inferido não é evidência nenhuma. Empate
+ * resolve pela menor ordem declarada. */
+function usuarioCanonico(itens) {
+  const redes = new Map();       // usuário -> Set de códigos de rede
+  const menorOrdem = new Map();
+  for (const it of itens) {
+    if (it.cod === 's') continue;            // site não tem usuário
+    /* só link declarado vota: link inferido foi montado por nós a partir de um
+     * arroba, então contá-lo como evidência daquele mesmo arroba é circular -
+     * e chegava a virar a escolha entre duas URLs declaradas em outra rede */
+    if (it.inferido) continue;
+    const u = usuarioDaUrl(it.url);
+    if (!u) continue;
+    if (!redes.has(u)) redes.set(u, new Set());
+    redes.get(u).add(it.cod);
+    menorOrdem.set(u, Math.min(menorOrdem.get(u) ?? Infinity, it.ordem));
+  }
+  let melhor = null;
+  for (const [u, cods] of redes) {
+    if (cods.size < 2) continue;
+    const cand = { u, redes: cods.size, ordem: menorOrdem.get(u) };
+    if (!melhor || cand.redes > melhor.redes ||
+        (cand.redes === melhor.redes && cand.ordem < melhor.ordem)) melhor = cand;
+  }
+  return melhor ? melhor.u : null;
+}
+
+/* Dedupe por rede, ordena por prioridade e corta em MAX_REDES.
+ *
+ * Três desempates, em ordem:
+ *
+ * 1. link declarado (0) passa na frente da rede nomeada no texto (1), que passa
+ *    na frente do usuário propagado para Instagram/X (2) - o @ é fallback, e não
+ *    pode roubar a vaga de um link que o candidato deu;
+ * 2. site próprio passa na frente de plataforma genérica;
+ * 3. o usuário canônico do candidato (o que ele repete em mais redes) passa na
+ *    frente dos outros perfis dele na mesma rede - ver usuarioCanonico();
+ * 4. por fim vale o NR_ORDEM_REDE_SOCIAL, a ordem que o próprio candidato
+ *    declarou (o CSV não vem ordenado por ela). Ignorá-la fazia o "site oficial"
+ *    do Patrus virar patrusgovernador.com.br (ordem 5, que nem responde) no
+ *    lugar de patrusananias.com.br (ordem 1).
+ *
+ * O corte em MAX_REDES respeita o item 1: os declarados enchem as vagas antes
+ * de qualquer inferido. Só a exibição volta a ser pela PRIORIDADE_REDES, para
+ * a fileira de ícones ficar sempre na mesma ordem. */
+function escolherRedes(lista) {
+  const ordenada = lista.map(([cod, url, ordem, inferido], i) => {
+    let plataforma = false;
+    if (cod === 's') {
+      try { plataforma = ehPlataforma(new URL(url).hostname.replace(/^www\./, '')); }
+      catch (_) { /* URL já veio validada; se não parsear, trata como site */ }
+    }
+    /* 0 declarado · 1 rede nomeada no texto · 2 usuário propagado */
+    return { cod, url, plataforma, inferido: Number(inferido) || 0,
+             usuario: usuarioDaUrl(url),
+             ordem: Number.isFinite(ordem) ? ordem : i };
+  });
+
+  const canonico = usuarioCanonico(ordenada);
+  const foraDoCanonico = it => (canonico && it.usuario !== canonico ? 1 : 0);
+
+  ordenada.sort((a, b) => (a.inferido - b.inferido) ||
+                          (a.plataforma - b.plataforma) ||
+                          (foraDoCanonico(a) - foraDoCanonico(b)) ||
+                          (a.ordem - b.ordem));
+
+  const vistos = new Set();
+  const unicos = [];
+  for (const item of ordenada) {
+    if (vistos.has(item.cod)) continue;
+    vistos.add(item.cod);
+    unicos.push(item);
+  }
+
+  /* Declarado primeiro; dentro de cada grupo, a prioridade decide quem fica
+   * com as vagas */
+  unicos.sort((a, b) => (a.inferido - b.inferido) ||
+    (PRIORIDADE_REDES.indexOf(a.cod) - PRIORIDADE_REDES.indexOf(b.cod)));
+  const escolhidas = unicos.slice(0, MAX_REDES);
+  escolhidas.sort((a, b) =>
+    PRIORIDADE_REDES.indexOf(a.cod) - PRIORIDADE_REDES.indexOf(b.cod));
+  return escolhidas.map(({ cod, url }) => [cod, url]);
+}
+
+/* Baixa o zip nacional e escreve data/redes/<escopo>.json com no máximo três
+ * links por candidatura, só para os SQ que estão na base. O escopo vem da nossa
+ * base, não do SG_UF do CSV, para o arquivo casar com o que o front procura. */
+async function baixarRedes(bases) {
+  await carregarTlds();
+  const url = REDES_ZIP_URL(ANO);
+  let zip;
+  try {
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': UA },
+      signal: AbortSignal.timeout(300000),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    zip = join(tmpdir(), 'santinho-redes-' + process.pid + '.zip');
+    writeFileSync(zip, Buffer.from(await resp.arrayBuffer()));
+  } catch (e) {
+    log('  redes indisponíveis (' + e.message + ') — os cards ficam sem ícone');
+    return { salvas: 0 };
+  }
+
+  const escopoDoSq = new Map();
+  for (const [uf, base] of bases) {
+    for (const cargo of Object.values(base.cargos)) {
+      for (const c of Object.values(cargo)) if (c.sq) escopoDoSq.set(c.sq, uf);
+    }
+  }
+
+  const extraido = extrairZip(zip);
+  const porEscopo = new Map();
+  const genericos = new Map();
+  let lidas = 0, semUrl = 0, recuperadas = 0, emails = 0, typos = 0, inferidas = 0;
+
+  for (const arquivo of readdirSync(extraido)) {
+    if (extname(arquivo).toLowerCase() !== '.csv') continue;
+    /* BRASIL.csv é o agregado: repete linha por linha o que já está nos
+     * arquivos por UF (conferido: os dois conjuntos são idênticos). Ler os dois
+     * dobrava o trabalho e inflava em 2x todos os números do relatório. */
+    if (/BRASIL/i.test(arquivo)) continue;
+    const { header, linhas } = lerCsv(readFileSync(join(extraido, arquivo)));
+    validarHeader(header, arquivo, COLUNAS_REDES, 'COLUNAS_REDES');
+    const col = Object.fromEntries(header.map((h, i) => [h, i]));
+
+    for (const l of linhas) {
+      if (l.length < header.length) continue;
+      const sq = (l[col.SQ_CANDIDATO] ?? '').trim();
+      const escopo = escopoDoSq.get(sq);
+      if (!escopo) continue;                    // vice, suplente, fora da base
+
+      const bruto = (l[col.DS_URL] ?? '').trim();
+      const ordem = Number(l[col.NR_ORDEM_REDE_SOCIAL]);
+      lidas++;
+
+      /* achados: [cod, url, ordem, inferido] */
+      const achados = [];
+      const n = normalizarUrlRede(bruto);
+      if (n) {
+        if (PROVEDOR_DE_EMAIL.test(n.host)) { emails++; continue; }
+        if (DOMINIO_TYPO.test(n.host)) { typos++; continue; }
+        if (!/^https?:\/\//i.test(bruto)) recuperadas++;
+        if (n.cod === 's') genericos.set(n.host, (genericos.get(n.host) || 0) + 1);
+        achados.push([n.cod, n.url, ordem, false]);
+      } else {
+        /* sem URL: sobra o @usuário, como fallback */
+        for (const [cod, url, nivel] of perfisDeTextoLivre(bruto)) {
+          achados.push([cod, url, ordem, nivel]);
+        }
+        if (achados.length) inferidas++; else { semUrl++; continue; }
+      }
+
+      if (!porEscopo.has(escopo)) porEscopo.set(escopo, new Map());
+      const mapa = porEscopo.get(escopo);
+      if (!mapa.has(sq)) mapa.set(sq, []);
+      for (const a of achados) mapa.get(sq).push(a);
+    }
+  }
+  rmSync(extraido, { recursive: true, force: true });
+  rmSync(zip, { force: true });
+
+  const dirRedes = join(RAIZ, 'data', 'redes');
+  rmSync(dirRedes, { recursive: true, force: true });
+  mkdirSync(dirRedes, { recursive: true });
+
+  let comRede = 0, links = 0;
+  for (const [escopo, mapa] of [...porEscopo].sort()) {
+    const saida = {};
+    for (const [sq, lista] of mapa) {
+      const escolhidas = escolherRedes(lista);
+      if (!escolhidas.length) continue;
+      saida[sq] = escolhidas;
+      comRede++;
+      links += escolhidas.length;
+    }
+    const destino = join(dirRedes, escopo + '.json');
+    writeFileSync(destino, JSON.stringify(saida));
+    log('  ' + escopo + ': ' + Object.keys(saida).length + ' candidatos, ' +
+        (statSync(destino).size / 1024).toFixed(0) + ' KB');
+  }
+
+  log('\n  ' + lidas + ' linhas consideradas · ' + recuperadas +
+      ' URLs recuperadas de texto livre · ' + inferidas + ' @usuários inferidos (fallback)');
+  log('  descartadas: ' + semUrl + ' sem URL ou link opaco em caixa alta, ' +
+      emails + ' e-mails, ' + typos + ' domínios-typo');
+  log('  ' + comRede + ' de ' + escopoDoSq.size + ' candidaturas com rede (' +
+      Math.round(comRede / escopoDoSq.size * 100) + '%), ' + links + ' links no total');
+
+  if (genericos.size) {
+    const topo = [...genericos].sort((a, b) => b[1] - a[1]).slice(0, 20);
+    log('\n  domínios no ícone genérico de site (' + genericos.size + ' distintos); ' +
+        'os 20 mais frequentes, para crescer a tabela REDES:');
+    for (const [h, n] of topo) log('     ' + String(n).padStart(5) + '  ' + h);
+  }
+
+  return { salvas: comRede };
+}
+
 /* --------------------------------------------------------------- saída */
 
 function escrever(bases, apurado) {
@@ -493,6 +1039,7 @@ function escrever(bases, apurado) {
     situacaoPublicada: apurado.situacaoPublicada,
     numerosEmDisputa: apurado.numerosEmDisputa,
     fotos: apurado.fotos,
+    redes: apurado.redes,
   }, null, 2));
 
   log('\n✔ ' + total + ' candidaturas em ' + bases.size + ' bases');
@@ -586,7 +1133,8 @@ async function main() {
     morrer('escolha a origem dos dados:\n' +
            '  --probe                      descobrir no portal quais recursos existem\n' +
            '  --from-local <dir|zip|csv>   arquivos já baixados do TSE (recomendado)\n' +
-           '  --fetch [--url=<URL>]        baixar do TSE agora');
+           '  --fetch [--url=<URL>]        baixar do TSE agora\n' +
+           '\n  extras: --fotos=locais|nenhuma  --redes=locais|nenhuma');
   }
 
   const origem = local || await baixarDoTse();
@@ -601,7 +1149,7 @@ async function main() {
       log('\n✔ schema validado (--dry-run: nada foi escrito)');
       return;
     }
-    if (MODO_FOTOS === 'locais') {
+    if (MODO_FOTOS === 'locais' || MODO_FOTOS === 'refazer') {
       log('\n── fotos (um ZIP por UF, ~113 MB no total)' +
           (opt('fotos') ? '' : ' — data/photos já existe, use --fotos=nenhuma para remover'));
       const r = await baixarFotos(bases);
@@ -609,6 +1157,16 @@ async function main() {
     } else {
       apurado.fotos = 'nenhuma';
     }
+
+    if (MODO_REDES === 'locais') {
+      log('\n── redes sociais (um zip nacional, 2,5 MB)' +
+          (opt('redes') ? '' : ' — data/redes já existe, use --redes=nenhuma para remover'));
+      const r = await baixarRedes(bases);
+      apurado.redes = r.salvas ? 'locais' : 'nenhuma';
+    } else {
+      apurado.redes = 'nenhuma';
+    }
+
     escrever(bases, apurado);
   } catch (e) {
     if (e instanceof ErroDeSchema) morrer(e.message);
@@ -618,4 +1176,11 @@ async function main() {
   }
 }
 
-main();
+/* importado pelos testes com SANTINHO_IMPORTADOR_TESTE=1, para exercitar as
+ * funções puras sem executar o pipeline */
+if (process.env.SANTINHO_IMPORTADOR_TESTE !== '1') main();
+
+export { normalizarUrlRede, escolherRedes, codigoDaRede, perfisDeTextoLivre, ehPlataforma,
+         definirTlds,
+         usuarioDaUrl, usuarioCanonico, PRIORIDADE_REDES, MAX_REDES,
+         PROVEDOR_DE_EMAIL, DOMINIO_TYPO };

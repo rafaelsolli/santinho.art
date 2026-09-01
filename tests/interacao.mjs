@@ -1402,6 +1402,79 @@ const xss = await page.evaluate(async () => {
 });
 eq('um input mestre por card', xss.input, 6);
 
+/* --------------------------------------------------- redes sociais no card */
+console.log('\n== redes sociais no card');
+await page.goto(BASE + '?uf=sp&df=1313&de=13131&s1=131&g=13&p=31', { waitUntil: 'networkidle0' });
+/* as redes chegam em segundo plano, depois da base */
+await page.waitForFunction(() => document.querySelectorAll('.card[data-cargo="df"] .rede').length > 0,
+                           { timeout: 5000 });
+
+const redes = await page.evaluate(() => {
+  const ler = cargo => [...document.querySelectorAll(`.card[data-cargo="${cargo}"] .rede`)].map(a => ({
+    href: a.href, target: a.target, rel: a.rel,
+    rotulo: a.getAttribute('aria-label'),
+    icone: a.querySelector('svg') ? a.querySelector('svg').getAttribute('aria-hidden') : null,
+    alvo: Math.round(a.getBoundingClientRect().height),
+  }));
+  return { df: ler('df'), de: ler('de'), s1: ler('s1'), g: ler('g'), p: ler('p') };
+});
+
+/* o arquivo tem sete links; o front corta em cinco, para a garantia de layout
+   nao depender do dado estar certo */
+eq('cinco icones no maximo, na ordem da prioridade', redes.df.map(a => a.href),
+   ['https://instagram.com/mayaexemplo', 'https://x.com/mayaexemplo',
+    'https://tiktok.com/@mayaexemplo', 'https://facebook.com/mayaexemplo',
+    'https://youtube.com/@mayaexemplo']);
+eq('um icone so quando so ha uma rede', redes.s1.map(a => a.href),
+   ['https://instagram.com/ruteexemplo']);
+eq('duas redes, instagram antes de facebook', redes.g.map(a => a.href),
+   ['https://instagram.com/agdaexemplo', 'https://facebook.com/agdaexemplo']);
+eq('candidato sem rede nao ganha icone', redes.de.length, 0);
+eq('escopo BR tem arquivo proprio', redes.p.map(a => a.href), ['https://wa.me/5511999999999']);
+eq('abre em nova aba', [...new Set(redes.df.map(a => a.target))], ['_blank']);
+eq('rel protege a aba de origem e nao endossa',
+   [...new Set(redes.df.map(a => a.rel))], ['noopener noreferrer nofollow']);
+eq('aria-label diz a rede, o nome e que abre fora', redes.df.map(a => a.rotulo),
+   ['Instagram de MAYA EXEMPLO (abre em nova aba)',
+    'X de MAYA EXEMPLO (abre em nova aba)',
+    'TikTok de MAYA EXEMPLO (abre em nova aba)',
+    'Facebook de MAYA EXEMPLO (abre em nova aba)',
+    'YouTube de MAYA EXEMPLO (abre em nova aba)']);
+eq('o desenho e decorativo para o leitor de tela',
+   [...new Set(redes.df.map(a => a.icone))], ['true']);
+eq('alvo de toque com pelo menos 24px', redes.df.every(a => a.alvo >= 24), true);
+
+/* a linha vazia nao pode deixar buraco no card */
+eq('linha de redes some quando nao ha nenhuma', await page.evaluate(() => {
+  const el = document.querySelector('.card[data-cargo="de"] .redes');
+  return { existe: Boolean(el), display: el ? getComputedStyle(el).display : null,
+           altura: el ? Math.round(el.getBoundingClientRect().height) : null };
+}), { existe: true, display: 'none', altura: 0 });
+
+/* §26: o card inteiro é alvo de foco do dígito, nos dois eventos */
+eq('tocar no icone nao move o foco do digito', await page.evaluate(() => {
+  const card = document.querySelector('.card[data-cargo="df"]');
+  card.querySelector('.digit[data-index="0"]').click();
+  const antes = card.querySelector('.digit.is-caret')?.dataset.index ?? null;
+  const a = card.querySelector('.rede');
+  a.addEventListener('click', e => e.preventDefault(), { once: true });
+  a.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  const depois = card.querySelector('.digit.is-caret')?.dataset.index ?? null;
+  return { antes, depois };
+}), { antes: '0', depois: '0' });
+
+/* §44: sem os dados o produto continua servindo, só sem ícone */
+eq('UF sem arquivo de redes nao quebra nada', await page.evaluate(async () => {
+  const antes = [];
+  window.addEventListener('error', e => antes.push(e.message));
+  document.getElementById('uf-placa-trigger').click();
+  return antes.length;
+}), 0);
+await page.goto(BASE + '?uf=mg&df=1313', { waitUntil: 'networkidle0' }); await sleep(400);
+eq('nenhum icone e nenhum erro quando falta data/redes/MG.json',
+   await page.evaluate(() => document.querySelectorAll('.rede').length), 0);
+
 console.log('\n== erros de console/pageerror');
 eq('sem erros de JS', erros, []);
 
